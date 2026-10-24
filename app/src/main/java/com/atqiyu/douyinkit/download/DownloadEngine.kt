@@ -467,12 +467,12 @@ object VideoGearSelector {
         val pool = if (preferH264 && h264.isNotEmpty()) h264 else gears
         return pool
             .filter { gear ->
-                val height = gear.height ?: 0
-                height in (preferredHeight - 200)..(preferredHeight + 200)
+                val side = gear.shortSide ?: 0
+                side in (preferredHeight - 200)..(preferredHeight + 200)
             }
             .maxByOrNull { it.bitrateBps ?: 0 }
             ?: pool
-                .filter { (it.height ?: 0) in 1..1920 }
+                .filter { (it.shortSide ?: 0) in 1..1920 }
                 .maxByOrNull { it.bitrateBps ?: 0 }
             ?: pool.maxByOrNull { it.bitrateBps ?: 0 }
     }

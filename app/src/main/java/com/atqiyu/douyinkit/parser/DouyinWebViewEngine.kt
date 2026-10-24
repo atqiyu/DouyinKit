@@ -269,6 +269,7 @@ class DouyinWebViewEngine(private val activity: Activity) {
         }
     }
 
+    @SuppressLint("RequiresFeature")
     private fun installBridge() {
         if (webMessageSupported) {
             runCatching {
@@ -299,6 +300,7 @@ class DouyinWebViewEngine(private val activity: Activity) {
         webView.addJavascriptInterface(JsBridge(), BRIDGE_ANDROID_NAME)
     }
 
+    @SuppressLint("RequiresFeature")
     private fun installScripts() {
         if (documentStartSupported) {
             runCatching {
@@ -401,6 +403,7 @@ class DouyinWebViewEngine(private val activity: Activity) {
                 return true
             }
 
+            @androidx.annotation.RequiresApi(Build.VERSION_CODES.O_MR1)
             override fun onSafeBrowsingHit(
                 view: WebView?,
                 request: WebResourceRequest?,

@@ -12,8 +12,8 @@ import androidx.activity.addCallback
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
-import com.atqiyu.douyinkit.core.net.HttpClients
 import com.atqiyu.douyinkit.core.util.LinkExtractor
+import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.ui.parse.ParseScreen
 import com.atqiyu.douyinkit.ui.theme.DouyinKitTheme
 import kotlinx.coroutines.delay
@@ -38,11 +38,12 @@ class ParseActivity : ComponentActivity() {
         inputs = intent.getStringArrayListExtra(EXTRA_INPUTS).orEmpty()
         forceRefresh = intent.getBooleanExtra(EXTRA_FORCE_REFRESH, false)
 
+        val container = applicationContext.appContainer
         engine = DouyinWebViewEngine(this)
         controller = ParseController(
             engine = engine,
-            resolver = ShortLinkResolver(HttpClients.shortLink()),
-            normalizer = DouyinDetailNormalizer(),
+            resolver = container.newShortLinkResolver(),
+            normalizer = container.newNormalizer(),
             scope = lifecycleScope,
         )
 
@@ -83,6 +84,11 @@ class ParseActivity : ComponentActivity() {
                     state.results.isNotEmpty()
                 if (finishedSuccessfully && !published) {
                     published = true
+                    try {
+                        applicationContext.appContainer.historyRepository.saveAll(state.results)
+                    } catch (_: Exception) {
+                        // History persistence must never block showing a successfully parsed result.
+                    }
                     ParseSessionStore.publish(
                         ParseBatchResult(
                             results = state.results,

@@ -105,17 +105,20 @@ data class VideoGear(
     val playApi: String? = null,
     val watermarked: Boolean = false,
 ) {
+    /** The short edge determines the conventional label for both portrait and landscape videos. */
+    val shortSide: Int?
+        get() = listOfNotNull(width, height).minOrNull()
+
     val resolutionLabel: String
         get() {
-            val h = height
+            val side = shortSide ?: return "未知清晰度"
             return when {
-                h == null -> "未知清晰度"
-                h >= 2000 -> "4K"
-                h >= 1400 -> "2K"
-                h >= 1000 -> "1080P"
-                h >= 700 -> "720P"
-                h >= 500 -> "540P"
-                else -> "${h}P"
+                side >= 2000 -> "4K"
+                side >= 1400 -> "2K"
+                side >= 1000 -> "1080P"
+                side >= 700 -> "720P"
+                side >= 500 -> "540P"
+                else -> "${side}P"
             }
         }
 

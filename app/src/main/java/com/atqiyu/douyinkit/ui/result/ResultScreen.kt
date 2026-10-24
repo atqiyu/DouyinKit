@@ -2,6 +2,7 @@ package com.atqiyu.douyinkit.ui.result
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,12 +33,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,17 +60,28 @@ import com.atqiyu.douyinkit.core.util.formatBytes
 import com.atqiyu.douyinkit.core.util.formatCount
 import com.atqiyu.douyinkit.core.util.formatCreateTime
 import com.atqiyu.douyinkit.core.util.formatDuration
+import com.atqiyu.douyinkit.download.VideoGearSelector
 import com.atqiyu.douyinkit.parser.ParseBatchResult
+import com.atqiyu.douyinkit.ui.preview.ImageViewerDialog
+import com.atqiyu.douyinkit.ui.preview.VideoPreviewDialog
 import com.atqiyu.douyinkit.ui.theme.BrandCyan
 import com.atqiyu.douyinkit.ui.theme.BrandPink
+import kotlinx.coroutines.launch
 
 @Composable
 fun ResultScreen(
     result: ParseBatchResult,
     onBack: () -> Unit,
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val onMessage: (String) -> Unit = { message ->
+        scope.launch { snackbarHostState.showSnackbar(message) }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Surface(color = MaterialTheme.colorScheme.background) {
                 Row(
@@ -107,7 +127,7 @@ fun ResultScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             items(result.results, key = { it.awemeId }) { aweme ->
-                ResultCard(aweme)
+                ResultCard(aweme = aweme, onMessage = onMessage)
             }
             if (result.failures.isNotEmpty()) {
                 item {
@@ -119,7 +139,20 @@ fun ResultScreen(
 }
 
 @Composable
-private fun ResultCard(aweme: Aweme) {
+private fun ResultCard(
+    aweme: Aweme,
+    onMessage: (String) -> Unit,
+) {
+    var showVideoPreview by remember { mutableStateOf(false) }
+    var showImageViewer by remember { mutableStateOf(false) }
+    var imageViewerIndex by remember { mutableStateOf(0) }
+    val previewUrl = remember(aweme) {
+        val selected = VideoGearSelector.select(aweme)
+        selected?.urls?.firstOrNull()
+            ?: selected?.playApi
+            ?: aweme.video?.defaultUrls?.firstOrNull()
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
@@ -149,7 +182,25 @@ private fun ResultCard(aweme: Aweme) {
                         .width(118.dp)
                         .aspectRatio(0.72f)
                         .clip(RoundedCornerShape(18.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .clickable {
+                            when (aweme.kind) {
+                                AwemeKind.VIDEO -> {
+                                    if (previewUrl != null) {
+                                        showVideoPreview = true
+                                    } else {
+                                        onMessage("没有可播放的视频地址，请刷新解析")
+                                    }
+                                }
+
+                                AwemeKind.IMAGES -> {
+                                    if (aweme.images.isNotEmpty()) {
+                                        imageViewerIndex = 0
+                                        showImageViewer = true
+                                    }
+                                }
+                            }
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     val cover = aweme.primaryCoverUrl
@@ -171,6 +222,22 @@ private fun ResultCard(aweme: Aweme) {
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(34.dp),
                         )
+                    }
+                    if (aweme.kind == AwemeKind.VIDEO) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.45f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayCircle,
+                                contentDescription = "预览视频",
+                                tint = Color.White,
+                                modifier = Modifier.size(30.dp),
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.width(14.dp))
@@ -215,14 +282,22 @@ private fun ResultCard(aweme: Aweme) {
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(8.dp))
+            ResultHistoryActions(aweme)
+            Spacer(Modifier.height(6.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(Modifier.height(12.dp))
 
             when (aweme.kind) {
                 AwemeKind.VIDEO -> VideoSection(aweme)
-                AwemeKind.IMAGES -> ImageSection(aweme)
+                AwemeKind.IMAGES -> ImageSection(aweme) { index ->
+                    imageViewerIndex = index
+                    showImageViewer = true
+                }
             }
+
+            Spacer(Modifier.height(14.dp))
+            ResultActions(aweme = aweme, onMessage = onMessage)
 
             aweme.music?.let { music ->
                 Spacer(Modifier.height(12.dp))
@@ -274,6 +349,22 @@ private fun ResultCard(aweme: Aweme) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+
+    if (showVideoPreview && previewUrl != null) {
+        VideoPreviewDialog(
+            url = previewUrl,
+            title = aweme.displayTitle,
+            onDismiss = { showVideoPreview = false },
+        )
+    }
+
+    if (showImageViewer && aweme.images.isNotEmpty()) {
+        ImageViewerDialog(
+            images = aweme.images,
+            initialIndex = imageViewerIndex,
+            onDismiss = { showImageViewer = false },
+        )
     }
 }
 
@@ -360,7 +451,10 @@ private fun GearRow(gear: VideoGear) {
 }
 
 @Composable
-private fun ImageSection(aweme: Aweme) {
+private fun ImageSection(
+    aweme: Aweme,
+    onImageClick: (Int) -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -383,7 +477,8 @@ private fun ImageSection(aweme: Aweme) {
                 modifier = Modifier
                     .size(width = 92.dp, height = 120.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .clickable { onImageClick(image.index) },
             ) {
                 val url = image.urls.firstOrNull()
                 if (url != null) {

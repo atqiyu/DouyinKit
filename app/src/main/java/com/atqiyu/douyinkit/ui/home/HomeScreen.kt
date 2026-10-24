@@ -15,12 +15,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
@@ -41,12 +43,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,7 +67,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.atqiyu.douyinkit.R
+import com.atqiyu.douyinkit.core.util.LinkExtractor
+import com.atqiyu.douyinkit.data.prefs.AppSettings
+import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.ui.theme.BrandCyan
 import com.atqiyu.douyinkit.ui.theme.BrandPink
 import kotlinx.coroutines.launch
@@ -75,11 +86,17 @@ private const val SAMPLE_SHARE_TEXT =
 fun HomeScreen(
     initialText: String = "",
     onParse: (String) -> Unit = {},
+    contentWindowInsets: WindowInsets = ScaffoldDefaults.contentWindowInsets,
 ) {
     var input by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val appSettings by context.applicationContext.appContainer.settingsRepository.settings
+        .collectAsStateWithLifecycle(initialValue = AppSettings())
+    var clipboardLink by remember { mutableStateOf<String?>(null) }
+    var lastClipboardHash by rememberSaveable { mutableStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     androidx.compose.runtime.LaunchedEffect(initialText) {
         if (initialText.isNotBlank()) {
@@ -87,9 +104,34 @@ fun HomeScreen(
         }
     }
 
+    DisposableEffect(lifecycleOwner, appSettings.clipboardDetection) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event != Lifecycle.Event.ON_RESUME || !appSettings.clipboardDetection) {
+                return@LifecycleEventObserver
+            }
+            runCatching {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                if (!clipboard.hasPrimaryClip()) return@runCatching
+                val clip = clipboard.primaryClip ?: return@runCatching
+                if (clip.itemCount <= 0) return@runCatching
+                val text = clip.getItemAt(0).coerceToText(context)?.toString().orEmpty()
+                if (text.isBlank()) return@runCatching
+                val hash = text.hashCode()
+                if (hash == lastClipboardHash) return@runCatching
+                lastClipboardHash = hash
+                clipboardLink = LinkExtractor.extractFirst(text)?.url
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = contentWindowInsets,
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -117,6 +159,19 @@ fun HomeScreen(
 
             FeatureChips()
             Spacer(Modifier.height(20.dp))
+
+            clipboardLink?.let { link ->
+                ClipboardBanner(
+                    link = link,
+                    onParseNow = {
+                        input = link
+                        clipboardLink = null
+                        onParse(link)
+                    },
+                    onDismiss = { clipboardLink = null },
+                )
+                Spacer(Modifier.height(12.dp))
+            }
 
             InputCard(
                 value = input,
@@ -168,6 +223,51 @@ fun HomeScreen(
             Spacer(Modifier.height(28.dp))
             Disclaimer()
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun ClipboardBanner(
+    link: String,
+    onParseNow: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.ContentPaste,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "检测到抖音链接",
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(
+                    text = link,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            TextButton(onClick = onParseNow) {
+                Text("解析")
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, contentDescription = "关闭")
+            }
         }
     }
 }

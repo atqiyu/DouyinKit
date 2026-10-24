@@ -73,7 +73,11 @@ class AudioExtractor {
                 info.offset = 0
                 info.size = size
                 info.presentationTimeUs = extractor.sampleTime
-                info.flags = extractor.sampleFlags
+                info.flags = if (extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) {
+                    MediaCodec.BUFFER_FLAG_KEY_FRAME
+                } else {
+                    0
+                }
                 buffer.position(0)
                 buffer.limit(size)
                 muxer.writeSampleData(outputTrack, buffer, info)

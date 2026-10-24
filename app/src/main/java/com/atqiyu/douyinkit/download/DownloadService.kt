@@ -20,18 +20,21 @@ import com.atqiyu.douyinkit.R
 import com.atqiyu.douyinkit.core.model.DouyinKitException
 import com.atqiyu.douyinkit.core.net.DouyinUserAgent
 import com.atqiyu.douyinkit.core.net.HttpClients
+import com.atqiyu.douyinkit.di.appContainer
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -50,6 +53,10 @@ class DownloadService : Service() {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
+    }
+
+    private val historyRepository by lazy {
+        applicationContext.appContainer.downloadHistoryRepository
     }
 
     override fun onCreate() {
@@ -71,6 +78,10 @@ class DownloadService : Service() {
                 }
                 val taskId = intent.getStringExtra(EXTRA_TASK_ID) ?: UUID.randomUUID().toString()
                 DownloadRegistry.add(DownloadTask(id = taskId, request = request))
+                scope.launch {
+                    val task = DownloadRegistry.get(taskId) ?: return@launch
+                    runCatching { historyRepository.save(task) }
+                }
                 startForegroundIfNeeded()
                 launchTask(taskId, request)
             }
@@ -192,6 +203,12 @@ class DownloadService : Service() {
                     )
                 }
             } finally {
+                withContext(NonCancellable) {
+                    val task = DownloadRegistry.get(taskId)
+                    if (task != null) {
+                        runCatching { historyRepository.save(task) }
+                    }
+                }
                 jobs.remove(taskId)
                 activeJobs.decrementAndGet()
                 updateNotification()

@@ -15,6 +15,8 @@ import okhttp3.Request
 class FileDownloader(
     private val client: OkHttpClient,
     private val userAgent: String = DouyinUserAgent.DESKTOP_FALLBACK,
+    private val urlPolicy: (String) -> Boolean = UrlPolicy::isAllowed,
+    private val urlNormalizer: (String) -> String? = UrlPolicy::httpsUrlOrNull,
 ) {
     suspend fun download(
         candidates: List<String>,
@@ -23,12 +25,13 @@ class FileDownloader(
         kind: MediaKind,
         onProgress: (bytes: Long, total: Long?) -> Unit = { _, _ -> },
     ): DownloadedMedia = withContext(Dispatchers.IO) {
-        val urls = candidates.mapNotNull { UrlPolicy.httpsUrlOrNull(it) }.distinct()
+        val urls = candidates.mapNotNull { urlNormalizer(it) }.distinct()
         if (urls.isEmpty()) {
             throw DownloadException(DownloadFailure.NO_SOURCE, "没有可用的下载地址")
         }
 
         val errors = mutableListOf<String>()
+        val failures = mutableListOf<DownloadException>()
         for (url in urls) {
             try {
                 return@withContext downloadSingle(
@@ -42,15 +45,34 @@ class FileDownloader(
                 throw cancelled
             } catch (error: Exception) {
                 errors += "${url.substringBefore('?')}: ${error.message ?: error.javaClass.simpleName}"
-                if (error is DownloadException && error.failure == DownloadFailure.NOT_MEDIA) {
-                    destination.delete()
+                if (error is DownloadException) {
+                    failures += error
+                    if (error.failure == DownloadFailure.NOT_MEDIA) {
+                        destination.delete()
+                    }
                 }
             }
         }
 
+        val failureCode = when {
+            failures.isNotEmpty() && failures.all { it.failure == DownloadFailure.EXPIRED } ->
+                DownloadFailure.EXPIRED
+
+            failures.any { it.failure == DownloadFailure.NOT_MEDIA } ->
+                DownloadFailure.NOT_MEDIA
+
+            failures.any { it.failure == DownloadFailure.TOO_LARGE } ->
+                DownloadFailure.TOO_LARGE
+
+            else -> DownloadFailure.HTTP
+        }
         throw DownloadException(
-            failure = DownloadFailure.HTTP,
-            message = "所有下载地址都失败了",
+            failure = failureCode,
+            message = if (failureCode == DownloadFailure.EXPIRED) {
+                "下载地址已过期"
+            } else {
+                "所有下载地址都失败了"
+            },
             attempts = errors,
         )
     }
@@ -94,7 +116,7 @@ class FileDownloader(
         }
 
         return response.use { resp ->
-            if (!UrlPolicy.isAllowed(resp.request.url.toString())) {
+            if (!urlPolicy(resp.request.url.toString())) {
                 throw DownloadException(DownloadFailure.HTTP, "下载被重定向到了未知域名")
             }
             if (resp.code == 416) {
