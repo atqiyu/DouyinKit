@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DouyinKit</string>
+    <string name="app_tagline">本地解析 · 无水印保存</string>
+    <string name="home_title">把喜欢的作品\n留在本地</string>
+    <string name="home_subtitle">粘贴抖音分享链接，解析视频、图集、动图与 BGM。</string>
+    <string name="input_placeholder">粘贴分享链接或文案…</string>
+    <string name="parse">开始解析</string>
+    <string name="paste">粘贴</string>
+    <string name="recent">最近解析</string>
+    <string name="recent_empty">解析过的作品会出现在这里</string>
+    <string name="local_disclaimer">仅用于个人学习与已授权内容的本地备份，请遵守平台条款与版权规定。</string>
+</resources>

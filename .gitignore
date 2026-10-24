@@ -1,0 +1,35 @@
+# Gradle
+.gradle/
+build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Signing / secrets
+*.jks
+*.keystore
+keystore.properties
+.env
+
+# Build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Logs and temp
+*.log
+*.hprof
+tmp/
+scratch/
+.zcode/
+.DS_Store
+Thumbs.db
