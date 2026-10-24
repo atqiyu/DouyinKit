@@ -180,8 +180,25 @@ unzip -l ./tmp/<文件名>.zip
 - `adb logcat -s DouyinWebView` 输出
 - 失败任务的错误提示
 
+## 真机验收记录（2026-10-24）
+
+设备：OPPO PGJM10，Android 14 / API 34，WebView 117.0.5938.60。
+
+已实测通过：
+
+- `https://v.douyin.com/i_mOpOTb9qM/` 视频解析：11 个码率档；1080P H.264 下载 3,594,326 字节，MediaStore 索引到 `Movies/DouyinKit/`
+- 视频 BGM：`Music/DouyinKit/` MP3 99,972 字节
+- `https://v.douyin.com/4nQR7cylDqw/` 图文解析：2 张图片 + 1 个 LivePhoto；01.webp 281,090 字节、02.webp 38,286 字节、02_live.mp4 217,978 字节、BGM MP3 532,552 字节、ZIP 1,026,992 字节
+- ZIP 条目：`info.json`、两张 WebP、LivePhoto MP4、BGM MP3
+- 视频播放、LivePhoto 播放、图片左右滑动/缩放
+- 收藏、标签、资料库筛选、下载历史在强制停止并重启后仍保留
+- 深色主题、动态状态栏图标、深链接收、分享文本预填
+- 回车/换行与键盘弹出时顶部不再被状态栏遮挡
+
+本次未覆盖：Android 7/8 真机、H.265 在系统相册的播放兼容性、验证码人工流程、链接真正过期后的刷新流程、剪贴板横幅（需要手动复制）。
+
 ## 已知未验证项
 
-- 当前开发环境没有连接真机，WebView 对抖音页面的实际通过率**尚未验证**。
 - Android 7 只做了 minSdk 静态检查/Lint，没有 API 24 设备运行记录。
 - H.265 相册兼容性取决于设备解码器。
+- 验证码出现时的 WebView 交互、链接过期后的 `NEEDS_REFRESH` 流程需要按上面的清单继续回归。

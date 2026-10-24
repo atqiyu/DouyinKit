@@ -9,10 +9,16 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.addCallback
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.atqiyu.douyinkit.core.util.LinkExtractor
+import com.atqiyu.douyinkit.data.prefs.AppSettings
+import com.atqiyu.douyinkit.data.prefs.ThemeMode
 import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.ui.parse.ParseScreen
 import com.atqiyu.douyinkit.ui.theme.DouyinKitTheme
@@ -55,7 +61,25 @@ class ParseActivity : ComponentActivity() {
 
         setContent {
             val state by controller.state.collectAsStateWithLifecycle()
-            DouyinKitTheme {
+            val loadedSettings by applicationContext.appContainer.settingsRepository.settings
+                .collectAsStateWithLifecycle(initialValue = null)
+            val settings = loadedSettings ?: AppSettings()
+            val darkTheme = when (settings.themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            val view = LocalView.current
+            SideEffect {
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
+            }
+            DouyinKitTheme(
+                darkTheme = darkTheme,
+                dynamicColor = settings.dynamicColor,
+            ) {
                 ParseScreen(
                     state = state,
                     engine = engine,

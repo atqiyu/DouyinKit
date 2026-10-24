@@ -95,6 +95,7 @@ fun VideoPreviewDialog(
             decorFitsSystemWindows = false,
         ),
     ) {
+        PreviewSystemBars()
         Box(
             modifier = Modifier
                 .fillMaxSize()

@@ -97,9 +97,14 @@ Windows 下可直接使用 `gradlew.bat`。Debug APK 未做压缩混淆；releas
 - `./gradlew assembleDebug`：通过，debug APK 约 25 MB
 - `./gradlew testDebugUnitTest`：33 个单元测试全部通过（链接提取、归一化、下载续传/过期/HTML/格式校验、URL 白名单、ZIP、档位选择、MIME）
 - `./gradlew lintDebug`：0 error，21 warning（主要是依赖可升级提示和 KAPT 建议）
-- **真机端到端解析尚未验收**：开发环境当前没有连接 Android 设备。WebView 能否在目标手机上稳定通过抖音页面风控，必须在真机上按 [docs/TESTING.md](docs/TESTING.md) 验证。
+- **真机验证已通过**（2026-10-24，OPPO PGJM10 / Android 14 / API 34 / WebView 117）：
+  - 视频短链解析成功，详情接口返回 11 个码率档，1080P H.264 下载为 3,594,326 字节并写入 `Movies/DouyinKit/`
+  - 图文短链解析成功：2 张图片 + 1 个 LivePhoto；下载得到 `01.webp` 281,090 字节、`02.webp` 38,286 字节、`02_live.mp4` 217,978 字节、BGM MP3 532,552 字节、ZIP 1,026,992 字节（含 `info.json`）
+  - 视频 BGM 直链下载为 99,972 字节 MP3
+  - 视频/LivePhoto Media3 预览、图片滑动缩放、收藏/标签、下载历史持久化、深色主题、深链接收均已实测
+- Android 7 真机尚未运行；仅做 minSdk 静态检查和 Lint。H.265 相册兼容性取决于设备解码器。
 
-如果真机解析失败，优先检查：
+如果解析失败，优先检查：
 
 1. 解析页“显示页面”后页面是否出现验证码/登录提示；
 2. 解析诊断里的 `hook`、`bodyLength`、`detailIds`；

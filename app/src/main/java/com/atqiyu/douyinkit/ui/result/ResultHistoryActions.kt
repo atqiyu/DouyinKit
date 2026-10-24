@@ -67,15 +67,11 @@ fun ResultHistoryActions(aweme: Aweme) {
                 tint = if (favorite) BrandPink else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Text(
-            text = if (favorite) "已收藏" else "收藏",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
 
-        Spacer(Modifier.width(8.dp))
-
-        TextButton(onClick = { showTagsDialog = true }) {
+        TextButton(
+            onClick = { showTagsDialog = true },
+            modifier = Modifier.weight(1f, fill = false),
+        ) {
             Icon(Icons.Default.LocalOffer, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
             Text(
@@ -84,8 +80,6 @@ fun ResultHistoryActions(aweme: Aweme) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
-
-        Spacer(Modifier.weight(1f))
 
         TextButton(
             onClick = {
@@ -98,7 +92,7 @@ fun ResultHistoryActions(aweme: Aweme) {
         ) {
             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
-            Text("重新解析")
+            Text("刷新")
         }
     }
 

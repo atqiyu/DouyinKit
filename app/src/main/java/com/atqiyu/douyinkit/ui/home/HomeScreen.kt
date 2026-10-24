@@ -305,14 +305,6 @@ private fun BrandBar() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = { }) {
-            Icon(
-                imageVector = Icons.Default.Settings,
-                contentDescription = "设置",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 

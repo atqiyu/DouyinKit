@@ -63,6 +63,7 @@ fun ImageViewerDialog(
             decorFitsSystemWindows = false,
         ),
     ) {
+        PreviewSystemBars()
         Box(
             modifier = Modifier
                 .fillMaxSize()

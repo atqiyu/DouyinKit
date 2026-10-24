@@ -42,7 +42,7 @@ class DouyinDetailNormalizerTest {
         assertEquals(3, aweme.video?.gears?.size)
 
         val gear1080 = aweme.video!!.gears.first { it.name == "normal_1080_0" }
-        assertEquals(VideoCodec.UNKNOWN, gear1080.codec)
+        assertEquals(VideoCodec.H264, gear1080.codec)
         assertEquals(1080, gear1080.width)
         assertEquals(1920, gear1080.height)
         assertEquals(30, gear1080.fps)

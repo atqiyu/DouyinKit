@@ -17,9 +17,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.SideEffect
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.atqiyu.douyinkit.data.prefs.AppSettings
 import com.atqiyu.douyinkit.data.prefs.ThemeMode
@@ -81,6 +84,14 @@ private fun MainContent(sharedTextFlow: MutableStateFlow<String>) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
+    }
+    val view = LocalView.current
+    SideEffect {
+        val window = (context as? Activity)?.window ?: return@SideEffect
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = !darkTheme
+            isAppearanceLightNavigationBars = !darkTheme
+        }
     }
     var visibleResult by remember { mutableStateOf<ParseBatchResult?>(null) }
     val scope = rememberCoroutineScope()

@@ -359,6 +359,12 @@ class DouyinDetailNormalizer(
     private fun detectCodec(gear: JsonObject, name: String, urls: List<String>): VideoCodec {
         if (gear.firstBool("is_h265", "isH265")) return VideoCodec.H265
         if (gear.firstBool("is_h264", "isH264")) return VideoCodec.H264
+        val lowerName = name.lowercase()
+        val suffix = lowerName.substringAfterLast('_', "")
+        if (suffix == "1" && lowerName.contains("adapt")) return VideoCodec.H265
+        if (suffix == "0" && (lowerName.contains("normal") || lowerName.contains("low"))) {
+            return VideoCodec.H264
+        }
         val haystack = (name + " " + urls.joinToString(" ")).lowercase()
         return when {
             haystack.contains("h265") || haystack.contains("hevc") || haystack.contains("265") -> VideoCodec.H265
