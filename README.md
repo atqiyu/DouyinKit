@@ -94,7 +94,7 @@ Windows 下可直接使用 `gradlew.bat`。Debug APK 未做压缩混淆；releas
 
 ## 当前验证状态
 
-- `./gradlew assembleDebug`：通过，debug APK 约 26 MB
+- `./gradlew assembleDebug`：通过，debug APK 约 25 MB
 - `./gradlew testDebugUnitTest`：33 个单元测试全部通过（链接提取、归一化、下载续传/过期/HTML/格式校验、URL 白名单、ZIP、档位选择、MIME）
 - `./gradlew lintDebug`：0 error，21 warning（主要是依赖可升级提示和 KAPT 建议）
 - **真机端到端解析尚未验收**：开发环境当前没有连接 Android 设备。WebView 能否在目标手机上稳定通过抖音页面风控，必须在真机上按 [docs/TESTING.md](docs/TESTING.md) 验证。
