@@ -5,6 +5,11 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
@@ -102,20 +107,30 @@ fun MainScreen(
                 .statusBarsPadding()
                 .clipToBounds(),
         ) {
-            when (tab) {
-                MainTab.HOME -> HomeScreen(
-                    initialText = initialText,
-                    onParse = onParse,
-                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                )
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = {
+                    fadeIn(tween(160)).togetherWith(fadeOut(tween(120)))
+                },
+                label = "tab-transition",
+            ) { currentTab ->
+                when (currentTab) {
+                    MainTab.HOME -> HomeScreen(
+                        initialText = initialText,
+                        onParse = onParse,
+                        onOpenRecent = { selectedAweme = it },
+                        onOpenLibrary = { tabIndex = MainTab.LIBRARY.ordinal },
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                    )
 
-                MainTab.LIBRARY -> LibraryScreen(
-                    onOpen = { selectedAweme = it },
-                )
+                    MainTab.LIBRARY -> LibraryScreen(
+                        onOpen = { selectedAweme = it },
+                    )
 
-                MainTab.DOWNLOADS -> DownloadsScreen()
+                    MainTab.DOWNLOADS -> DownloadsScreen()
 
-                MainTab.SETTINGS -> SettingsScreen()
+                    MainTab.SETTINGS -> SettingsScreen()
+                }
             }
         }
     }

@@ -126,6 +126,12 @@ class ParseActivity : ComponentActivity() {
         }
     }
 
+    override fun finish() {
+        super.finish()
+        @Suppress("DEPRECATION")
+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+    }
+
     override fun onDestroy() {
         controller.destroy()
         super.onDestroy()

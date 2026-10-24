@@ -24,7 +24,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -202,9 +201,11 @@ fun ResultActions(
             preferredHeight = settings.defaultQualityHeight,
             preferH264 = settings.preferH264,
             onDismiss = { showQualitySheet = false },
-            onDownload = { gear ->
+            onDownload = { gears ->
                 showQualitySheet = false
-                enqueue(DownloadRequest(aweme = aweme, kind = DownloadKind.VIDEO, gear = gear))
+                gears.forEach { gear ->
+                    enqueue(DownloadRequest(aweme = aweme, kind = DownloadKind.VIDEO, gear = gear))
+                }
             },
         )
     }
@@ -237,27 +238,33 @@ private fun VideoQualitySheet(
     preferredHeight: Int,
     preferH264: Boolean,
     onDismiss: () -> Unit,
-    onDownload: (VideoGear) -> Unit,
+    onDownload: (List<VideoGear>) -> Unit,
 ) {
     val gears = remember(aweme) {
         aweme.video?.gears
             .orEmpty()
             .filter { it.hasDownloadSource }
             .sortedWith(
-                compareByDescending<VideoGear> { it.height ?: 0 }
+                compareByDescending<VideoGear> { it.shortSide ?: 0 }
                     .thenByDescending { it.bitrateBps ?: 0 },
             )
     }
     var selected by remember(aweme, preferredHeight, preferH264) {
         mutableStateOf(
-            VideoGearSelector.select(
-                aweme = aweme,
-                preferH264 = preferH264,
-                preferredHeight = preferredHeight,
+            setOfNotNull(
+                VideoGearSelector.select(
+                    aweme = aweme,
+                    preferH264 = preferH264,
+                    preferredHeight = preferredHeight,
+                ),
             ),
         )
     }
-    val hasH265 = gears.any { it.codec == VideoCodec.H265 && it == selected }
+    fun toggle(gear: VideoGear) {
+        selected = if (gear in selected) selected - gear else selected + gear
+    }
+    val hasH265 = selected.any { it.codec == VideoCodec.H265 }
+    val selectedSize = selected.sumOf { it.sizeBytes ?: 0L }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -276,7 +283,7 @@ private fun VideoQualitySheet(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "优先无水印直链；H.264 兼容性最好",
+                text = "可多选；优先无水印直链，H.264 兼容性最好",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -299,13 +306,13 @@ private fun VideoQualitySheet(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selected = gear }
+                                .clickable { toggle(gear) }
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            RadioButton(
-                                selected = selected == gear,
-                                onClick = { selected = gear },
+                            Checkbox(
+                                checked = gear in selected,
+                                onCheckedChange = { toggle(gear) },
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
@@ -343,13 +350,28 @@ private fun VideoQualitySheet(
                 )
             }
 
+            if (selected.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "已选 ${selected.size} 档 · 共 ${formatBytes(selectedSize)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+
             Spacer(Modifier.height(12.dp))
             Button(
-                onClick = { selected?.let(onDownload) },
+                onClick = { onDownload(selected.toList()) },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = selected != null,
+                enabled = selected.isNotEmpty(),
             ) {
-                Text("开始下载")
+                Text(
+                    if (selected.isEmpty()) {
+                        "请选择清晰度"
+                    } else {
+                        "下载所选（${selected.size}）"
+                    },
+                )
             }
             Spacer(Modifier.height(12.dp))
         }

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -87,6 +88,9 @@ fun LibraryScreen(
     var filterIndex by rememberSaveable { mutableIntStateOf(0) }
     var selectedTag by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<AwemeEntity?>(null) }
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
     val filter = LibraryFilter.entries[filterIndex]
 
     val decoded = remember(entities) {
@@ -127,21 +131,57 @@ fun LibraryScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "资料库",
+                        text = if (selectionMode) "已选 ${selectedIds.size} 项" else "资料库",
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "${entities.size} 条解析记录 · 收藏 ${entities.count { it.isFavorite }}",
+                        text = if (selectionMode) {
+                            "点击作品可多选"
+                        } else {
+                            "${entities.size} 条解析记录 · 收藏 ${entities.count { it.isFavorite }}"
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Icon(
-                    imageVector = Icons.Default.PhotoLibrary,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
-                )
+                if (selectionMode) {
+                    val allFilteredSelected = filtered.isNotEmpty() &&
+                        filtered.all { it.first.awemeId in selectedIds }
+                    TextButton(
+                        onClick = {
+                            selectedIds = if (allFilteredSelected) {
+                                emptySet()
+                            } else {
+                                filtered.map { it.first.awemeId }.toSet()
+                            }
+                        },
+                        enabled = filtered.isNotEmpty(),
+                    ) {
+                        Text(if (allFilteredSelected) "取消全选" else "全选")
+                    }
+                    TextButton(
+                        onClick = { showBulkDeleteDialog = true },
+                        enabled = selectedIds.isNotEmpty(),
+                    ) {
+                        Text("删除")
+                    }
+                    TextButton(
+                        onClick = {
+                            selectionMode = false
+                            selectedIds = emptySet()
+                        },
+                    ) {
+                        Text("取消")
+                    }
+                } else {
+                    TextButton(
+                        onClick = { selectionMode = true },
+                        enabled = entities.isNotEmpty(),
+                    ) {
+                        Text("选择")
+                    }
+                }
             }
         }
 
@@ -158,29 +198,33 @@ fun LibraryScreen(
         }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LibraryFilter.entries.forEachIndexed { index, item ->
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(LibraryFilter.entries, key = { it.name }) { item ->
+                    val index = item.ordinal
                     FilterChip(
                         selected = filterIndex == index,
                         onClick = { filterIndex = index },
-                        label = { Text(item.label) },
+                        label = {
+                            Text(
+                                text = item.label,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        },
+                        modifier = Modifier.height(34.dp),
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = BrandPink.copy(alpha = 0.16f),
                             selectedLabelColor = BrandPink,
                         ),
                     )
                 }
-            }
-        }
-
-        if (allTags.isNotEmpty()) {
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (allTags.isNotEmpty()) {
                     item {
-                        FilterChip(
-                            selected = selectedTag == null,
-                            onClick = { selectedTag = null },
-                            label = { Text("所有标签") },
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 2.dp)
+                                .width(1.dp)
+                                .height(24.dp)
+                                .background(MaterialTheme.colorScheme.outlineVariant),
                         )
                     }
                     items(allTags, key = { it }) { tag ->
@@ -189,7 +233,13 @@ fun LibraryScreen(
                             onClick = {
                                 selectedTag = if (selectedTag == tag) null else tag
                             },
-                            label = { Text(tag) },
+                            label = {
+                                Text(
+                                    text = tag,
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                            },
+                            modifier = Modifier.height(34.dp),
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = BrandCyan.copy(alpha = 0.16f),
                                 selectedLabelColor = MaterialTheme.colorScheme.secondary,
@@ -210,7 +260,26 @@ fun LibraryScreen(
                     entity = entity,
                     aweme = aweme,
                     tags = repository.tagsOf(entity),
-                    onClick = { onOpen(aweme) },
+                    selectionMode = selectionMode,
+                    selected = entity.awemeId in selectedIds,
+                    onClick = {
+                        if (selectionMode) {
+                            selectedIds = if (entity.awemeId in selectedIds) {
+                                selectedIds - entity.awemeId
+                            } else {
+                                selectedIds + entity.awemeId
+                            }
+                        } else {
+                            onOpen(aweme)
+                        }
+                    },
+                    onToggleSelected = {
+                        selectedIds = if (entity.awemeId in selectedIds) {
+                            selectedIds - entity.awemeId
+                        } else {
+                            selectedIds + entity.awemeId
+                        }
+                    },
                     onToggleFavorite = {
                         scope.launch {
                             repository.setFavorite(entity.awemeId, !entity.isFavorite)
@@ -244,6 +313,35 @@ fun LibraryScreen(
             },
         )
     }
+
+    if (showBulkDeleteDialog) {
+        val count = selectedIds.size
+        AlertDialog(
+            onDismissRequest = { showBulkDeleteDialog = false },
+            title = { Text("删除 $count 条记录") },
+            text = { Text("只删除本机的解析记录，不会删除已经下载到相册的文件。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBulkDeleteDialog = false
+                        val ids = selectedIds
+                        scope.launch {
+                            ids.forEach { repository.delete(it) }
+                            selectedIds = emptySet()
+                            selectionMode = false
+                        }
+                    },
+                ) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBulkDeleteDialog = false }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -251,7 +349,10 @@ private fun LibraryCard(
     entity: AwemeEntity,
     aweme: Aweme,
     tags: List<String>,
+    selectionMode: Boolean,
+    selected: Boolean,
     onClick: () -> Unit,
+    onToggleSelected: () -> Unit,
     onToggleFavorite: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -260,9 +361,22 @@ private fun LibraryCard(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = BorderStroke(
+            1.dp,
+            if (selected) BrandPink else MaterialTheme.colorScheme.outlineVariant,
+        ),
     ) {
-        Row(modifier = Modifier.padding(12.dp)) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (selectionMode) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { onToggleSelected() },
+                )
+                Spacer(Modifier.width(4.dp))
+            }
             Box(
                 modifier = Modifier
                     .width(86.dp)
@@ -301,27 +415,29 @@ private fun LibraryCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.weight(1f))
-                    IconButton(
-                        onClick = onToggleFavorite,
-                        modifier = Modifier.size(32.dp),
-                    ) {
-                        Icon(
-                            imageVector = if (entity.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                            contentDescription = "收藏",
-                            tint = if (entity.isFavorite) BrandPink else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(32.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "删除",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
-                        )
+                    if (!selectionMode) {
+                        IconButton(
+                            onClick = onToggleFavorite,
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (entity.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                                contentDescription = "收藏",
+                                tint = if (entity.isFavorite) BrandPink else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "删除",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
                 Text(

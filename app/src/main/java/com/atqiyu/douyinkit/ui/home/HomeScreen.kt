@@ -2,8 +2,11 @@ package com.atqiyu.douyinkit.ui.home
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +19,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,7 +36,6 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -62,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -71,7 +76,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import com.atqiyu.douyinkit.R
+import com.atqiyu.douyinkit.core.model.Aweme
+import com.atqiyu.douyinkit.core.model.AwemeKind
 import com.atqiyu.douyinkit.core.util.LinkExtractor
 import com.atqiyu.douyinkit.data.prefs.AppSettings
 import com.atqiyu.douyinkit.di.appContainer
@@ -80,12 +88,14 @@ import com.atqiyu.douyinkit.ui.theme.BrandPink
 import kotlinx.coroutines.launch
 
 private const val SAMPLE_SHARE_TEXT =
-    "7.95 复制打开抖音，看看【喝不完的星巴克的作品】我想亲亲亲亲吻你^3^ #时之魔女 #cos #ooc致歉 https://v.douyin.com/i_mOpOTb9qM/ 复制此链接，打开抖音搜索，直接观看视频！"
+    "（示例）请替换为抖音真实分享链接：https://v.douyin.com/EXAMPLE123/"
 
 @Composable
 fun HomeScreen(
     initialText: String = "",
     onParse: (String) -> Unit = {},
+    onOpenRecent: (Aweme) -> Unit = {},
+    onOpenLibrary: () -> Unit = {},
     contentWindowInsets: WindowInsets = ScaffoldDefaults.contentWindowInsets,
 ) {
     var input by rememberSaveable { mutableStateOf("") }
@@ -94,8 +104,14 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     val appSettings by context.applicationContext.appContainer.settingsRepository.settings
         .collectAsStateWithLifecycle(initialValue = AppSettings())
+    val historyRepository = context.applicationContext.appContainer.historyRepository
+    val recentEntities by historyRepository.observeAll()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val recentAwemes = remember(recentEntities) {
+        recentEntities.take(6).mapNotNull { historyRepository.decode(it) }
+    }
     var clipboardLink by remember { mutableStateOf<String?>(null) }
-    var lastClipboardHash by rememberSaveable { mutableStateOf(0) }
+    var lastClipboardHash by rememberSaveable { mutableStateOf(Int.MIN_VALUE) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     androidx.compose.runtime.LaunchedEffect(initialText) {
@@ -104,13 +120,23 @@ fun HomeScreen(
         }
     }
 
+    androidx.compose.runtime.LaunchedEffect(appSettings.clipboardDetection) {
+        if (!appSettings.clipboardDetection) {
+            clipboardLink = null
+        }
+    }
+
     DisposableEffect(lifecycleOwner, appSettings.clipboardDetection) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event != Lifecycle.Event.ON_RESUME || !appSettings.clipboardDetection) {
-                return@LifecycleEventObserver
-            }
+        if (!appSettings.clipboardDetection) {
+            return@DisposableEffect onDispose { }
+        }
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            ?: return@DisposableEffect onDispose { }
+        val handler = Handler(Looper.getMainLooper())
+        var registered = false
+
+        fun inspectClipboard() {
             runCatching {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 if (!clipboard.hasPrimaryClip()) return@runCatching
                 val clip = clipboard.primaryClip ?: return@runCatching
                 if (clip.itemCount <= 0) return@runCatching
@@ -122,9 +148,55 @@ fun HomeScreen(
                 clipboardLink = LinkExtractor.extractFirst(text)?.url
             }
         }
+
+        val inspectRunnable = Runnable { inspectClipboard() }
+        val listener = ClipboardManager.OnPrimaryClipChangedListener {
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                inspectClipboard()
+            }
+        }
+
+        fun register() {
+            if (!registered) {
+                clipboard.addPrimaryClipChangedListener(listener)
+                registered = true
+            }
+        }
+
+        fun unregister() {
+            if (registered) {
+                clipboard.removePrimaryClipChangedListener(listener)
+                registered = false
+            }
+        }
+
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    register()
+                    handler.removeCallbacks(inspectRunnable)
+                    handler.postDelayed(inspectRunnable, 350)
+                }
+
+                Lifecycle.Event.ON_PAUSE -> {
+                    unregister()
+                    handler.removeCallbacks(inspectRunnable)
+                }
+
+                else -> Unit
+            }
+        }
+
         lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            register()
+            handler.postDelayed(inspectRunnable, 350)
+        }
+
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            unregister()
+            handler.removeCallbacks(inspectRunnable)
         }
     }
 
@@ -140,25 +212,26 @@ fun HomeScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
         ) {
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
             BrandBar()
-            Spacer(Modifier.height(36.dp))
+            Spacer(Modifier.height(24.dp))
 
             Text(
                 text = stringResource(R.string.home_title),
-                style = MaterialTheme.typography.displaySmall,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = stringResource(R.string.home_subtitle),
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
 
             FeatureChips()
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(14.dp))
 
             clipboardLink?.let { link ->
                 ClipboardBanner(
@@ -189,7 +262,12 @@ fun HomeScreen(
                         input = pasted
                     }
                 },
-                onSample = { input = SAMPLE_SHARE_TEXT },
+                onSample = {
+                    input = SAMPLE_SHARE_TEXT
+                    scope.launch {
+                        snackbarHostState.showSnackbar("示例链接无法解析，请替换为真实分享链接")
+                    }
+                },
             )
 
             Spacer(Modifier.height(16.dp))
@@ -218,9 +296,13 @@ fun HomeScreen(
                 Text(stringResource(R.string.parse), style = MaterialTheme.typography.labelLarge)
             }
 
-            Spacer(Modifier.height(32.dp))
-            RecentSection()
             Spacer(Modifier.height(28.dp))
+            RecentSection(
+                recent = recentAwemes,
+                onOpenRecent = onOpenRecent,
+                onViewAll = onOpenLibrary,
+            )
+            Spacer(Modifier.height(24.dp))
             Disclaimer()
             Spacer(Modifier.height(24.dp))
         }
@@ -409,7 +491,11 @@ private fun InputCard(
 }
 
 @Composable
-private fun RecentSection() {
+private fun RecentSection(
+    recent: List<Aweme>,
+    onOpenRecent: (Aweme) -> Unit,
+    onViewAll: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -419,45 +505,135 @@ private fun RecentSection() {
             style = MaterialTheme.typography.titleMedium,
         )
         Spacer(Modifier.weight(1f))
-        TextButton(onClick = { }) {
+        TextButton(onClick = onViewAll) {
             Text("查看全部", style = MaterialTheme.typography.labelMedium)
         }
     }
     Spacer(Modifier.height(8.dp))
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+
+    if (recent.isEmpty()) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.History,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    Text(
+                        text = stringResource(R.string.recent_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = "解析记录只保存在本机",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                    )
+                }
+            }
+        }
+    } else {
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(recent, key = { it.awemeId }) { aweme ->
+                RecentCard(aweme = aweme, onClick = { onOpenRecent(aweme) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentCard(
+    aweme: Aweme,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .width(154.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 22.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Column {
             Box(
                 modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
+                    .fillMaxWidth()
+                    .height(104.dp)
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = Icons.Default.History,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                val cover = aweme.primaryCoverUrl
+                if (cover != null) {
+                    AsyncImage(
+                        model = cover,
+                        contentDescription = aweme.displayTitle,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (aweme.kind == AwemeKind.IMAGES) {
+                            Icons.Default.PhotoLibrary
+                        } else {
+                            Icons.Default.PlayCircle
+                        },
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                }
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(6.dp),
+                    color = if (aweme.kind == AwemeKind.IMAGES) BrandCyan else BrandPink,
+                    contentColor = if (aweme.kind == AwemeKind.IMAGES) {
+                        MaterialTheme.colorScheme.onSecondary
+                    } else {
+                        MaterialTheme.colorScheme.onPrimary
+                    },
+                    shape = CircleShape,
+                ) {
+                    Text(
+                        text = if (aweme.kind == AwemeKind.IMAGES) "图文" else "视频",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                }
             }
-            Spacer(Modifier.width(14.dp))
-            Column {
+            Column(modifier = Modifier.padding(10.dp)) {
                 Text(
-                    text = stringResource(R.string.recent_empty),
+                    text = aweme.displayTitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "解析记录只保存在本机",
+                    text = aweme.author.displayName,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

@@ -54,7 +54,6 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.atqiyu.douyinkit.core.model.Aweme
 import com.atqiyu.douyinkit.core.model.AwemeKind
-import com.atqiyu.douyinkit.core.model.ParseSource
 import com.atqiyu.douyinkit.core.model.VideoGear
 import com.atqiyu.douyinkit.core.util.formatBytes
 import com.atqiyu.douyinkit.core.util.formatCount
@@ -247,16 +246,6 @@ private fun ResultCard(
                             text = if (aweme.kind == AwemeKind.IMAGES) "图文" else "视频",
                             color = if (aweme.kind == AwemeKind.IMAGES) BrandCyan else BrandPink,
                         )
-                        Badge(
-                            text = when (aweme.parseSource) {
-                                ParseSource.DETAIL -> "详情接口"
-                                ParseSource.PAGE_MODEL -> "页面模型"
-                                ParseSource.MIXED -> "详情 + 页面"
-                                ParseSource.SSR -> "SSR"
-                                ParseSource.SHARE_FALLBACK -> "兼容模式"
-                            },
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -284,6 +273,8 @@ private fun ResultCard(
 
             Spacer(Modifier.height(8.dp))
             ResultHistoryActions(aweme)
+            Spacer(Modifier.height(6.dp))
+            DownloadStatusSection(awemeId = aweme.awemeId, onMessage = onMessage)
             Spacer(Modifier.height(6.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(Modifier.height(12.dp))

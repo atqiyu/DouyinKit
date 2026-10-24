@@ -44,6 +44,16 @@ fun formatCreateTime(seconds: Long?): String {
     }.getOrDefault("")
 }
 
+fun formatSpeed(bytesPerSecond: Long): String {
+    if (bytesPerSecond <= 0) return ""
+    val mb = bytesPerSecond / (1024.0 * 1024.0)
+    return if (mb >= 1) {
+        String.format(Locale.CHINA, "%.1f MB/s", mb)
+    } else {
+        "${bytesPerSecond / 1024} KB/s"
+    }
+}
+
 fun formatElapsedMs(ms: Long): String {
     val totalSeconds = (ms / 1000).coerceAtLeast(0)
     val minutes = totalSeconds / 60

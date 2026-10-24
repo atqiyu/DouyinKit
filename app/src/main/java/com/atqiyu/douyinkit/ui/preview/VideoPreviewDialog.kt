@@ -32,6 +32,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -47,34 +48,40 @@ fun VideoPreviewDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
+    val isLocal = url.startsWith("content://") || url.startsWith("file://")
     var error by remember(url) { mutableStateOf<String?>(null) }
 
     val player = remember(url) {
         ExoPlayer.Builder(context).build().apply {
-            val dataSourceFactory = DefaultHttpDataSource.Factory()
-                .setDefaultRequestProperties(
-                    mapOf(
-                        "Referer" to DouyinUserAgent.REFERER,
-                        "User-Agent" to DouyinUserAgent.DESKTOP_FALLBACK,
-                    ),
-                )
-                .setAllowCrossProtocolRedirects(true)
-            setMediaSource(
+            val mediaSource = if (isLocal) {
+                ProgressiveMediaSource.Factory(DefaultDataSource.Factory(context))
+                    .createMediaSource(MediaItem.fromUri(url))
+            } else {
+                val dataSourceFactory = DefaultHttpDataSource.Factory()
+                    .setDefaultRequestProperties(
+                        mapOf(
+                            "Referer" to DouyinUserAgent.REFERER,
+                            "User-Agent" to DouyinUserAgent.DESKTOP_FALLBACK,
+                        ),
+                    )
+                    .setAllowCrossProtocolRedirects(true)
                 ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(url)),
-            )
+                    .createMediaSource(MediaItem.fromUri(url))
+            }
+            setMediaSource(mediaSource)
             prepare()
             playWhenReady = true
             addListener(
                 object : Player.Listener {
                     override fun onPlayerError(playbackException: PlaybackException) {
                         val message = playbackException.message.orEmpty()
-                        error = if (message.contains("decoder", ignoreCase = true) ||
-                            message.contains("codec", ignoreCase = true)
-                        ) {
-                            "当前设备无法解码该视频，建议下载 H.264 版本"
-                        } else {
-                            "视频加载失败，链接可能已过期"
+                        error = when {
+                            message.contains("decoder", ignoreCase = true) ||
+                                message.contains("codec", ignoreCase = true) ->
+                                "当前设备无法解码该视频，建议下载 H.264 版本"
+
+                            isLocal -> "文件无法播放，可能已损坏"
+                            else -> "视频加载失败，链接可能已过期"
                         }
                     }
                 },

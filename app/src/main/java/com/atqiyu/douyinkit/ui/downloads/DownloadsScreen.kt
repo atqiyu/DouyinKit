@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -40,8 +41,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,6 +62,9 @@ import com.atqiyu.douyinkit.download.DownloadService
 import com.atqiyu.douyinkit.download.DownloadStatus
 import com.atqiyu.douyinkit.download.DownloadTask
 import com.atqiyu.douyinkit.download.SavedFile
+import com.atqiyu.douyinkit.ui.preview.AudioPreviewDialog
+import com.atqiyu.douyinkit.ui.preview.ImageViewerDialog
+import com.atqiyu.douyinkit.ui.preview.VideoPreviewDialog
 import kotlinx.coroutines.launch
 
 @Composable
@@ -78,7 +84,9 @@ fun DownloadsScreen() {
     val active = ordered.count {
         it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.QUEUED
     }
+    var preview by remember { mutableStateOf<DownloadPreview?>(null) }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 24.dp),
@@ -121,6 +129,7 @@ fun DownloadsScreen() {
                 DownloadTaskCard(
                     task = task,
                     context = context,
+                    onPreview = { preview = it },
                     onRemove = {
                         DownloadRegistry.remove(task.id)
                         scope.launch { repository.remove(task.id) }
@@ -129,15 +138,39 @@ fun DownloadsScreen() {
             }
         }
     }
+        when (val current = preview) {
+            is DownloadPreview.Video -> VideoPreviewDialog(
+                url = current.url,
+                title = current.title,
+                onDismiss = { preview = null },
+            )
+
+            is DownloadPreview.Images -> ImageViewerDialog(
+                images = current.images,
+                initialIndex = 0,
+                onDismiss = { preview = null },
+            )
+
+            is DownloadPreview.Audio -> AudioPreviewDialog(
+                title = current.title,
+                uri = current.uri,
+                onDismiss = { preview = null },
+            )
+
+            null -> Unit
+        }
+    }
 }
 
 @Composable
 private fun DownloadTaskCard(
     task: DownloadTask,
     context: Context,
+    onPreview: (DownloadPreview) -> Unit,
     onRemove: () -> Unit,
 ) {
     val aweme = task.request.aweme
+    val preview = remember(task) { buildDownloadPreview(task) }
     val progress = task.progress
     val fraction = progress.total?.takeIf { it > 0 }?.let {
         (progress.bytes.toFloat() / it).coerceIn(0f, 1f)
@@ -233,14 +266,21 @@ private fun DownloadTaskCard(
                         label = "取消",
                     )
                 } else {
+                    preview?.let { previewData ->
+                        OutlinedAction(
+                            onClick = { onPreview(previewData) },
+                            icon = Icons.Default.Visibility,
+                            label = "预览",
+                        )
+                    }
                     task.files.firstOrNull()?.let { file ->
                         ActionButton(
-                            onClick = { openFile(context, file) },
+                            onClick = { openSavedFile(context, file) },
                             icon = Icons.Default.OpenInNew,
                             label = "打开",
                             primary = true,
                         )
-                        IconButton(onClick = { shareFile(context, file) }) {
+                        IconButton(onClick = { shareSavedFile(context, file) }) {
                             Icon(Icons.Default.Share, contentDescription = "分享")
                         }
                     }
@@ -411,25 +451,3 @@ private fun formatSpeed(bytesPerSecond: Long): String {
     }
 }
 
-private fun openFile(context: Context, file: SavedFile) {
-    val intent = Intent(Intent.ACTION_VIEW)
-        .setDataAndType(file.uri, file.mimeType)
-        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    runCatching {
-        context.startActivity(Intent.createChooser(intent, "打开文件"))
-    }.onFailure {
-        Toast.makeText(context, "没有可以打开该文件的应用", Toast.LENGTH_SHORT).show()
-    }
-}
-
-private fun shareFile(context: Context, file: SavedFile) {
-    val intent = Intent(Intent.ACTION_SEND)
-        .setType(file.mimeType)
-        .putExtra(Intent.EXTRA_STREAM, file.uri)
-        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    runCatching {
-        context.startActivity(Intent.createChooser(intent, "分享文件"))
-    }.onFailure {
-        Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
-    }
-}
