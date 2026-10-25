@@ -1,12 +1,22 @@
-# GitHub 仓库与首个 Release
+# GitHub 仓库与 Release 流程
 
-本地仓库已经准备好：
+首版已经发布：
+
+- 仓库：<https://github.com/atqiyu/DouyinKit>
+- Release：<https://github.com/atqiyu/DouyinKit/releases/tag/v1.2.0>
+- APK 资产：`DouyinKit-v1.2.0-debug.apk`（26,573,831 字节）
+- 资产 SHA-256：`5468cbbdf30b41c468a1afa9179b7b47ea1106886c8173358d51486d35817715`
+- 可见性：Public；默认分支：`main`；许可证：MIT
+- 已设置仓库描述和 9 个 Topics
+
+下面的流程保留给后续版本发版使用。
+
+当前本地状态：
 
 - 分支：`main`
 - 首个版本：`v1.2.0`
 - Release 说明：[RELEASE_NOTES_v1.2.0.md](../RELEASE_NOTES_v1.2.0.md)
 - APK 产物：`dist/DouyinKit-v1.2.0-debug.apk`（已在 `.gitignore` 中忽略，不会提交进源码）
-- SHA-256：`5468cbbdf30b41c468a1afa9179b7b47ea1106886c8173358d51486d35817715`
 - 许可证：[MIT](../LICENSE)
 
 ## 仓库信息
