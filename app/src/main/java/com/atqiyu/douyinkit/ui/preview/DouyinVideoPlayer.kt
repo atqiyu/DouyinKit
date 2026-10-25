@@ -21,7 +21,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -48,10 +47,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -70,7 +69,7 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.atqiyu.douyinkit.core.net.DouyinUserAgent
-import com.atqiyu.douyinkit.core.util.formatDuration
+import com.atqiyu.douyinkit.ui.theme.BrandPink
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -355,6 +354,11 @@ private fun VideoProgressLine(
         },
         label = "video-progress",
     )
+    val scrubHighlight by animateFloatAsState(
+        targetValue = if (dragFraction != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 120, easing = LinearEasing),
+        label = "video-progress-highlight",
+    )
 
     Box(
         modifier = modifier
@@ -388,38 +392,51 @@ private fun VideoProgressLine(
                 .height(30.dp),
         ) {
             val trackY = size.height - 2.dp.toPx()
+            val activeX = size.width * animatedFraction
+            val activeColor = lerp(Color.White, BrandPink, scrubHighlight)
+            val inactiveColor = Color.White.copy(alpha = 0.28f + 0.22f * scrubHighlight)
+            val activeStroke = 2.dp.toPx() + 2.dp.toPx() * scrubHighlight
             drawLine(
-                color = Color.White.copy(alpha = 0.28f),
+                color = inactiveColor,
                 start = Offset(0f, trackY),
                 end = Offset(size.width, trackY),
-                strokeWidth = 2.dp.toPx(),
+                strokeWidth = 2.dp.toPx() + 1.dp.toPx() * scrubHighlight,
                 cap = StrokeCap.Round,
             )
             drawLine(
-                color = Color.White,
+                color = activeColor,
                 start = Offset(0f, trackY),
-                end = Offset(size.width * animatedFraction, trackY),
-                strokeWidth = 2.dp.toPx(),
+                end = Offset(activeX, trackY),
+                strokeWidth = activeStroke,
                 cap = StrokeCap.Round,
             )
-        }
-
-        if (dragFraction != null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 30.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val current = (duration * animatedFraction).toLong()
-                Text(
-                    text = "${formatDuration(current)} / ${formatDuration(duration)}",
+            if (scrubHighlight > 0.01f) {
+                val knobY = trackY - 13.dp.toPx() * scrubHighlight
+                val knobRadius = 5.dp.toPx() * scrubHighlight
+                drawLine(
+                    color = BrandPink.copy(alpha = 0.85f),
+                    start = Offset(activeX, knobY),
+                    end = Offset(activeX, trackY),
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+                drawCircle(
+                    color = BrandPink.copy(alpha = 0.22f * scrubHighlight),
+                    radius = knobRadius * 2.15f,
+                    center = Offset(activeX, knobY),
+                )
+                drawCircle(
+                    color = BrandPink,
+                    radius = knobRadius,
+                    center = Offset(activeX, knobY),
+                )
+                drawCircle(
                     color = Color.White,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    radius = knobRadius * 0.36f,
+                    center = Offset(activeX, knobY),
                 )
             }
         }
+
     }
 }

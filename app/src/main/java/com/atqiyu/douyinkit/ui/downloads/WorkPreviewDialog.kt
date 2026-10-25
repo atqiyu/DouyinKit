@@ -2,6 +2,7 @@ package com.atqiyu.douyinkit.ui.downloads
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -93,6 +94,7 @@ import com.atqiyu.douyinkit.download.DownloadService
 import com.atqiyu.douyinkit.download.DownloadStatus
 import com.atqiyu.douyinkit.download.DownloadTask
 import com.atqiyu.douyinkit.ui.preview.AudioPreviewDialog
+import com.atqiyu.douyinkit.ui.preview.AutoLoopingAudio
 import com.atqiyu.douyinkit.ui.preview.DouyinVideoPlayer
 import com.atqiyu.douyinkit.ui.preview.InlineLoopingVideo
 import com.atqiyu.douyinkit.ui.preview.PreviewSystemBars
@@ -151,6 +153,22 @@ fun WorkPreviewDialog(
     var confirmRemove by remember { mutableStateOf(false) }
     var infoVisible by remember(group.awemeId) { mutableStateOf(true) }
     var playingLiveUri by remember(group.awemeId) { mutableStateOf<String?>(null) }
+    val topBarAlpha by animateFloatAsState(
+        targetValue = if (infoVisible) 1f else 0.35f,
+        animationSpec = tween(durationMillis = 220),
+        label = "preview-top-bar-alpha",
+    )
+    val imageBgmItem = group.audioItems.firstOrNull()
+    val imageBgmUrl = if (group.aweme.kind == AwemeKind.IMAGES) {
+        imageBgmItem?.file?.uri?.toString()
+            ?: group.aweme.music?.playUrls?.firstOrNull()
+    } else {
+        null
+    }
+    val imageBgmEnabled = group.aweme.kind == AwemeKind.IMAGES &&
+        selected?.kind == GroupMediaKind.IMAGE &&
+        playingLiveUri == null &&
+        audioPreview == null
 
     LaunchedEffect(pagerState.currentPage) {
         playingLiveUri = null
@@ -247,6 +265,11 @@ fun WorkPreviewDialog(
                 else -> EmptyStage(group)
             }
 
+            AutoLoopingAudio(
+                url = imageBgmUrl,
+                enabled = imageBgmEnabled,
+            )
+
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -277,49 +300,57 @@ fun WorkPreviewDialog(
                         tint = Color.White,
                     )
                 }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "作品预览",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .alpha(topBarAlpha),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "作品预览",
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = if (group.isActive) {
+                                group.statusLine
+                            } else {
+                                "${group.fileCount} 个文件 · ${formatBytes(group.totalBytes)}"
+                            },
+                            color = Color.White.copy(alpha = 0.62f),
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    HeaderAction(
+                        icon = Icons.Default.Info,
+                        label = "作品与文件详情",
+                        onClick = { showDetails = true },
                     )
-                    Text(
-                        text = if (group.isActive) {
-                            group.statusLine
-                        } else {
-                            "${group.fileCount} 个文件 · ${formatBytes(group.totalBytes)}"
-                        },
-                        color = Color.White.copy(alpha = 0.62f),
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    HeaderAction(
+                        icon = Icons.Default.Share,
+                        label = "分享当前文件",
+                        enabled = displayItem != null,
+                        onClick = { displayItem?.let { shareSavedFile(context, it.file) } },
+                    )
+                    HeaderAction(
+                        icon = Icons.AutoMirrored.Filled.OpenInNew,
+                        label = "打开当前文件",
+                        enabled = displayItem != null,
+                        onClick = { displayItem?.let { openSavedFile(context, it.file) } },
+                    )
+                    HeaderAction(
+                        icon = if (infoVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        label = if (infoVisible) "隐藏作品信息" else "显示作品信息",
+                        onClick = { infoVisible = !infoVisible },
                     )
                 }
-                HeaderAction(
-                    icon = Icons.Default.Info,
-                    label = "作品与文件详情",
-                    onClick = { showDetails = true },
-                )
-                HeaderAction(
-                    icon = Icons.Default.Share,
-                    label = "分享当前文件",
-                    enabled = displayItem != null,
-                    onClick = { displayItem?.let { shareSavedFile(context, it.file) } },
-                )
-                HeaderAction(
-                    icon = Icons.AutoMirrored.Filled.OpenInNew,
-                    label = "打开当前文件",
-                    enabled = displayItem != null,
-                    onClick = { displayItem?.let { openSavedFile(context, it.file) } },
-                )
-                HeaderAction(
-                    icon = if (infoVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                    label = if (infoVisible) "隐藏作品信息" else "显示作品信息",
-                    onClick = { infoVisible = !infoVisible },
-                )
             }
 
             val currentLive = if (selected?.kind == GroupMediaKind.IMAGE) {

@@ -36,3 +36,6 @@ Thumbs.db
 
 # Local verification artifacts
 .zcode-artifacts/
+
+# Release artifacts
+dist/

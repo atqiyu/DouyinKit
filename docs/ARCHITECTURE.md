@@ -95,8 +95,9 @@ DataStore：
 | `DownloadCleanupDialog` | 作品/文件级删除选择、全选、是否删除本地文件 |
 | `WorkPartsSheet` | 下载卡片长按后的文件选择、文件详情与分析入口 |
 | `WorkPreviewDialog` | 作品级全屏预览：抖音式视频/图集/LivePhoto/BGM、作品与文件详情面板 |
-| `DouyinVideoPlayer` | 自定义交互的 Media3 播放器（单击暂停、平滑拖动进度、检查器隐藏信息） |
+| `DouyinVideoPlayer` | 自定义交互的 Media3 播放器（单击暂停、平滑拖动进度、拖动高亮、信息隐藏） |
 | `InlineLoopingVideo` | 图片 Pager 内的 LivePhoto 循环播放（TextureView，可继续左右滑动） |
+| `AutoLoopingAudio` | 图文作品预览的无界面 BGM 循环播放器，随内容切换和生命周期暂停/恢复 |
 | `ImageViewerDialog` / `AudioPreviewDialog` | 结果页/详情页图片缩放与音频试听 |
 
 ## 生命周期与线程

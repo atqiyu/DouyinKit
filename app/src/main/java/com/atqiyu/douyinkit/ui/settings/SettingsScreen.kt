@@ -5,6 +5,7 @@ import android.webkit.CookieManager
 import android.webkit.WebStorage
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,14 +16,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -37,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,11 +59,27 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private const val GITHUB_DEVELOPER = "atqiyu"
+private const val GITHUB_REPOSITORY = "DouyinKit"
+private const val GITHUB_BASE_URL = "https://github.com/$GITHUB_DEVELOPER/$GITHUB_REPOSITORY"
+private const val GITHUB_REPOSITORY_URL = GITHUB_BASE_URL
+private const val GITHUB_LICENSE_URL = "$GITHUB_BASE_URL/blob/main/LICENSE"
+private const val GITHUB_DEVELOPER_URL = "https://github.com/$GITHUB_DEVELOPER"
+
 @Composable
 fun SettingsScreen() {
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val container = context.appContainer
     val scope = rememberCoroutineScope()
+
+    fun openLink(url: String) {
+        runCatching {
+            uriHandler.openUri(url)
+        }.onFailure {
+            Toast.makeText(context, "无法打开链接，请稍后重试", Toast.LENGTH_SHORT).show()
+        }
+    }
     val settings by container.settingsRepository.settings
         .collectAsStateWithLifecycle(initialValue = AppSettings())
     val downloadTasks by DownloadRegistry.tasks.collectAsStateWithLifecycle()
@@ -229,13 +251,39 @@ fun SettingsScreen() {
 
         item {
             SettingsCard(title = "关于") {
-                SettingTextRow("版本", BuildConfig.VERSION_NAME)
+                SettingTextRow("版本", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                SettingTextRow("开发者", "atqiyu")
                 SettingTextRow("WebView", webViewVersion)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                LinkRow(
+                    title = "GitHub 仓库",
+                    subtitle = "github.com/atqiyu/DouyinKit",
+                    onClick = { openLink(GITHUB_REPOSITORY_URL) },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                LinkRow(
+                    title = "开源许可证",
+                    subtitle = "MIT License · 查看完整许可证",
+                    onClick = { openLink(GITHUB_LICENSE_URL) },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                LinkRow(
+                    title = "开发者主页",
+                    subtitle = "github.com/atqiyu",
+                    onClick = { openLink(GITHUB_DEVELOPER_URL) },
+                )
+                Spacer(Modifier.height(10.dp))
                 Text(
                     text = "DouyinKit 仅用于个人学习与已授权内容的本地备份。解析依赖抖音公开页面，可能随页面改版失效；请遵守平台条款与版权规定，不要用于批量抓取或商业分发。",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Copyright © 2026 atqiyu. 源代码以 MIT License 开源；作品内容版权归原作者及平台所有，不随代码许可证授予。本项目与抖音/字节跳动无隶属关系。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
                 )
             }
         }
@@ -408,6 +456,36 @@ private fun ActionRow(
         TextButton(onClick = onClick) {
             Text("清理")
         }
+    }
+}
+
+@Composable
+private fun LinkRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 8.dp).size(18.dp),
+        )
     }
 }
 
