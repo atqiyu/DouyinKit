@@ -1,6 +1,7 @@
 package com.atqiyu.douyinkit.download
 
 import android.net.Uri
+import androidx.core.net.toUri
 import com.atqiyu.douyinkit.core.model.Aweme
 import com.atqiyu.douyinkit.core.model.VideoGear
 import java.io.File
@@ -50,6 +51,33 @@ data class SavedFile(
     val bytes: Long,
 )
 
+@Serializable
+data class SavedFileRef(
+    val uri: String,
+    val path: String? = null,
+    val displayName: String = "",
+    val mimeType: String = "",
+    val bytes: Long = 0L,
+)
+
+fun SavedFile.toRef(): SavedFileRef = SavedFileRef(
+    uri = uri.toString(),
+    path = path,
+    displayName = displayName,
+    mimeType = mimeType,
+    bytes = bytes,
+)
+
+fun SavedFileRef.toSavedFile(): SavedFile? = runCatching {
+    SavedFile(
+        uri = uri.toUri(),
+        path = path,
+        displayName = displayName,
+        mimeType = mimeType,
+        bytes = bytes,
+    )
+}.getOrNull()
+
 data class DownloadProgress(
     val bytes: Long = 0,
     val total: Long? = null,
@@ -67,6 +95,8 @@ data class DownloadRequest(
     val includeMusic: Boolean = true,
     val createZip: Boolean = false,
     val allowWatermarkedFallback: Boolean = false,
+    val skipMediaKeys: Set<String> = emptySet(),
+    val replaceFiles: List<SavedFileRef> = emptyList(),
 )
 
 data class DownloadTask(

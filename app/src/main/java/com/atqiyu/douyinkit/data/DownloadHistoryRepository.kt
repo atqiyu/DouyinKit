@@ -1,6 +1,6 @@
 package com.atqiyu.douyinkit.data
 
-import android.net.Uri
+import androidx.core.net.toUri
 import com.atqiyu.douyinkit.data.db.DownloadHistoryDao
 import com.atqiyu.douyinkit.data.db.DownloadHistoryEntity
 import com.atqiyu.douyinkit.download.DownloadProgress
@@ -21,6 +21,8 @@ class DownloadHistoryRepository(
     },
 ) {
     fun observeAll(): Flow<List<DownloadHistoryEntity>> = dao.observeAll()
+
+    suspend fun allTasks(): List<DownloadTask> = dao.getAll().mapNotNull { toTask(it) }
 
     suspend fun save(task: DownloadTask) {
         val files = task.files.map { it.toRecord() }
@@ -127,7 +129,7 @@ class DownloadHistoryRepository(
     private fun SavedFileRecord.toSavedFile(): SavedFile? {
         return runCatching {
             SavedFile(
-                uri = Uri.parse(uri),
+                uri = uri.toUri(),
                 path = path,
                 displayName = displayName,
                 mimeType = mimeType,

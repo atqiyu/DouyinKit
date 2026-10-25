@@ -10,6 +10,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,11 +44,12 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -72,6 +74,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -90,6 +94,7 @@ import com.atqiyu.douyinkit.download.DownloadStatus
 import com.atqiyu.douyinkit.download.DownloadTask
 import com.atqiyu.douyinkit.ui.preview.AudioPreviewDialog
 import com.atqiyu.douyinkit.ui.preview.DouyinVideoPlayer
+import com.atqiyu.douyinkit.ui.preview.InlineLoopingVideo
 import com.atqiyu.douyinkit.ui.preview.PreviewSystemBars
 import com.atqiyu.douyinkit.ui.theme.BrandCyan
 import com.atqiyu.douyinkit.ui.theme.BrandPink
@@ -102,16 +107,20 @@ fun WorkPreviewDialog(
     group: DownloadGroup,
     onDismiss: () -> Unit,
     onRemoveGroup: (DownloadGroup) -> Unit,
+    initialFileUri: String? = null,
 ) {
     val context = LocalContext.current
     var selectedUri by remember(group.awemeId) {
-        mutableStateOf(group.featuredMedia?.file?.uri?.toString())
+        mutableStateOf(initialFileUri ?: group.featuredMedia?.file?.uri?.toString())
     }
     val mediaUris = remember(group.mediaItems) {
         group.mediaItems.map { it.file.uri.toString() }
     }
-    LaunchedEffect(group.awemeId, mediaUris) {
-        if (selectedUri == null || selectedUri !in mediaUris) {
+    LaunchedEffect(group.awemeId, mediaUris, initialFileUri) {
+        val requested = initialFileUri?.takeIf { it in mediaUris }
+        if (requested != null) {
+            selectedUri = requested
+        } else if (selectedUri == null || selectedUri !in mediaUris) {
             selectedUri = group.featuredMedia?.file?.uri?.toString()
         }
     }
@@ -135,24 +144,17 @@ fun WorkPreviewDialog(
     } else {
         selected
     }
-    val liveAction = if (selected?.kind == GroupMediaKind.IMAGE) {
-        currentImagePage?.live
-    } else {
-        null
-    }
-    val imageReturnAction = if (selected?.kind == GroupMediaKind.LIVE) {
-        imagePages.firstOrNull {
-            it.live?.file?.uri?.toString() == selected.file.uri.toString()
-        }?.image
-    } else {
-        null
-    }
-
     var showDetails by remember(group.awemeId) {
         mutableStateOf(group.mediaItems.isEmpty())
     }
     var audioPreview by remember { mutableStateOf<GroupMediaItem?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
+    var infoVisible by remember(group.awemeId) { mutableStateOf(true) }
+    var playingLiveUri by remember(group.awemeId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(pagerState.currentPage) {
+        playingLiveUri = null
+    }
 
     fun select(item: GroupMediaItem) {
         selectedUri = item.file.uri.toString()
@@ -188,31 +190,48 @@ fun WorkPreviewDialog(
                         modifier = Modifier.fillMaxSize(),
                     ) { pageIndex ->
                         val page = imagePages[pageIndex]
+                        val liveUri = page.live?.file?.uri?.toString()
+                        val livePlaying = liveUri != null && playingLiveUri == liveUri
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color.Black),
+                                .background(Color.Black)
+                                .pointerInput(pageIndex, liveUri) {
+                                    detectTapGestures {
+                                        if (liveUri != null && playingLiveUri != liveUri) {
+                                            playingLiveUri = liveUri
+                                        }
+                                    }
+                                },
                             contentAlignment = Alignment.Center,
                         ) {
-                            AsyncImage(
-                                model = page.image.file.uri,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .alpha(0.3f),
-                                contentScale = ContentScale.Crop,
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.28f)),
-                            )
-                            AsyncImage(
-                                model = page.image.file.uri,
-                                contentDescription = page.image.title,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit,
-                            )
+                            if (livePlaying) {
+                                InlineLoopingVideo(
+                                    url = liveUri.orEmpty(),
+                                    modifier = Modifier.fillMaxSize(),
+                                    pause = audioPreview != null,
+                                )
+                            } else {
+                                AsyncImage(
+                                    model = page.image.file.uri,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .alpha(0.3f),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color.Black.copy(alpha = 0.28f)),
+                                )
+                                AsyncImage(
+                                    model = page.image.file.uri,
+                                    contentDescription = page.image.title,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit,
+                                )
+                            }
                         }
                     }
                 }
@@ -239,19 +258,6 @@ fun WorkPreviewDialog(
                         ),
                     ),
             )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(340.dp)
-                    .padding(bottom = 36.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.86f)),
-                        ),
-                    ),
-            )
-
             Row(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -277,6 +283,8 @@ fun WorkPreviewDialog(
                         color = Color.White,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = if (group.isActive) {
@@ -286,16 +294,67 @@ fun WorkPreviewDialog(
                         },
                         color = Color.White.copy(alpha = 0.62f),
                         style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (group.isActive) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .size(18.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp,
-                    )
+                HeaderAction(
+                    icon = Icons.Default.Info,
+                    label = "作品与文件详情",
+                    onClick = { showDetails = true },
+                )
+                HeaderAction(
+                    icon = Icons.Default.Share,
+                    label = "分享当前文件",
+                    enabled = displayItem != null,
+                    onClick = { displayItem?.let { shareSavedFile(context, it.file) } },
+                )
+                HeaderAction(
+                    icon = Icons.AutoMirrored.Filled.OpenInNew,
+                    label = "打开当前文件",
+                    enabled = displayItem != null,
+                    onClick = { displayItem?.let { openSavedFile(context, it.file) } },
+                )
+                HeaderAction(
+                    icon = if (infoVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    label = if (infoVisible) "隐藏作品信息" else "显示作品信息",
+                    onClick = { infoVisible = !infoVisible },
+                )
+            }
+
+            val currentLive = if (selected?.kind == GroupMediaKind.IMAGE) {
+                currentImagePage?.live
+            } else {
+                null
+            }
+            if (currentLive != null &&
+                playingLiveUri != currentLive.file.uri.toString()
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = 98.dp),
+                    color = Color.Black.copy(alpha = 0.42f),
+                    shape = CircleShape,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayCircle,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Text(
+                            text = "点击播放动图",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
                 }
             }
 
@@ -317,32 +376,37 @@ fun WorkPreviewDialog(
                 }
             }
 
-            WorkOverlayInfo(
-                group = group,
-                item = displayItem,
-                extraLabel = if (selected?.kind == GroupMediaKind.IMAGE) {
-                    "${pagerState.currentPage + 1}/${imagePages.size} 张"
-                } else {
-                    null
-                },
+            AnimatedVisibility(
+                visible = infoVisible,
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(start = 16.dp, end = 82.dp, bottom = 46.dp),
-            )
-
-            PreviewRail(
-                item = displayItem,
-                liveAction = liveAction,
-                imageReturnAction = imageReturnAction,
-                onDetails = { showDetails = true },
-                onLive = { liveAction?.let(::select) },
-                onBackToImages = { imageReturnAction?.let(::select) },
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 10.dp),
-            )
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth(),
+                enter = fadeIn(tween(220)) + slideInVertically(tween(240)) { it / 14 },
+                exit = fadeOut(tween(160)) + slideOutVertically(tween(180)) { it / 18 },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)),
+                            ),
+                        )
+                        .padding(top = 56.dp),
+                ) {
+                    WorkOverlayInfo(
+                        group = group,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(
+                                start = 16.dp,
+                                end = 16.dp,
+                                bottom = if (selected?.isPlayableVideo == true) 36.dp else 18.dp,
+                            ),
+                    )
+                }
+            }
 
             AnimatedVisibility(
                 visible = showDetails,
@@ -414,10 +478,37 @@ fun WorkPreviewDialog(
 }
 
 @Composable
+private fun HeaderAction(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = if (enabled) 0.32f else 0.16f))
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClickLabel = label,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = Color.White.copy(alpha = if (enabled) 1f else 0.35f),
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+@Composable
 private fun WorkOverlayInfo(
     group: DownloadGroup,
-    item: GroupMediaItem?,
-    extraLabel: String?,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember(group.awemeId) { mutableStateOf(false) }
@@ -495,36 +586,6 @@ private fun WorkOverlayInfo(
             StatChip(Icons.Default.StarBorder, formatCount(aweme.stats.collectCount))
         }
 
-        if (item != null) {
-            Spacer(Modifier.height(9.dp))
-            Surface(
-                color = Color.Black.copy(alpha = 0.34f),
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
-                ) {
-                    Icon(
-                        imageVector = item.kind.icon,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.72f),
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Text(
-                        text = listOfNotNull(extraLabel, item.title, item.detailSummary)
-                            .joinToString(" · "),
-                        color = Color.White.copy(alpha = 0.78f),
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
-
         aweme.music?.let { music ->
             Spacer(Modifier.height(7.dp))
             Row(
@@ -568,88 +629,6 @@ private fun StatChip(icon: ImageVector, text: String) {
             text = text,
             color = Color.White.copy(alpha = 0.76f),
             style = MaterialTheme.typography.labelSmall,
-        )
-    }
-}
-
-@Composable
-private fun PreviewRail(
-    item: GroupMediaItem?,
-    liveAction: GroupMediaItem?,
-    imageReturnAction: GroupMediaItem?,
-    onDetails: () -> Unit,
-    onLive: () -> Unit,
-    onBackToImages: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        RailAction(
-            icon = Icons.Default.Info,
-            label = "详情",
-            onClick = onDetails,
-        )
-        if (liveAction != null) {
-            RailAction(
-                icon = Icons.Default.PlayCircle,
-                label = "动图",
-                onClick = onLive,
-            )
-        }
-        if (imageReturnAction != null) {
-            RailAction(
-                icon = Icons.Default.PhotoLibrary,
-                label = "图集",
-                onClick = onBackToImages,
-            )
-        }
-        item?.let { media ->
-            RailAction(
-                icon = Icons.Default.Share,
-                label = "分享",
-                onClick = { shareSavedFile(context, media.file) },
-            )
-            RailAction(
-                icon = Icons.AutoMirrored.Filled.OpenInNew,
-                label = "打开",
-                onClick = { openSavedFile(context, media.file) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun RailAction(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        IconButton(
-            onClick = onClick,
-            modifier = Modifier
-                .size(46.dp)
-                .background(Color.Black.copy(alpha = 0.34f), CircleShape),
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = Color.White,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-        Text(
-            text = label,
-            color = Color.White.copy(alpha = 0.82f),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
         )
     }
 }
@@ -1323,7 +1302,7 @@ private fun FailedTaskRow(task: DownloadTask) {
     }
 }
 
-private val GroupMediaKind.icon: ImageVector
+internal val GroupMediaKind.icon: ImageVector
     get() = when (this) {
         GroupMediaKind.VIDEO -> Icons.Default.Movie
         GroupMediaKind.IMAGE -> Icons.Default.Image
@@ -1332,7 +1311,7 @@ private val GroupMediaKind.icon: ImageVector
         GroupMediaKind.ZIP -> Icons.Default.Archive
     }
 
-private val GroupMediaKind.color: Color
+internal val GroupMediaKind.color: Color
     get() = when (this) {
         GroupMediaKind.VIDEO -> BrandPink
         GroupMediaKind.IMAGE -> BrandCyan

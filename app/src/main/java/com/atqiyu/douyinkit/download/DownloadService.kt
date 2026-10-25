@@ -167,6 +167,23 @@ class DownloadService : Service() {
                             error = outcome.warnings.takeIf { it.isNotEmpty() }?.joinToString("；"),
                         )
                     }
+                    if (request.replaceFiles.isNotEmpty() &&
+                        outcome.warnings.isEmpty() &&
+                        (outcome.files.isNotEmpty() || outcome.zip != null)
+                    ) {
+                        runCatching {
+                            val deletedUris = mutableSetOf<String>()
+                            request.replaceFiles.forEach { ref ->
+                                if (deleteSavedFileRef(this@DownloadService, ref)) {
+                                    deletedUris += ref.uri
+                                }
+                            }
+                            removeFileUrisFromDownloadRecords(
+                                repository = historyRepository,
+                                uris = deletedUris,
+                            )
+                        }
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 DownloadRegistry.update(taskId) {

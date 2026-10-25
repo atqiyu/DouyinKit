@@ -5,6 +5,9 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -39,6 +42,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,6 +95,7 @@ fun DouyinVideoPlayer(
     var duration by remember(url) { mutableLongStateOf(0L) }
     var error by remember(url) { mutableStateOf<String?>(null) }
     var dragFraction by remember(url) { mutableStateOf<Float?>(null) }
+    val currentPause by rememberUpdatedState(pause)
     var wasPlayingBeforePause by remember(url) { mutableStateOf(true) }
     var wasPlayingBeforeScrub by remember(url) { mutableStateOf(true) }
     var wasPlayingBeforeExternalPause by remember(url) { mutableStateOf(false) }
@@ -166,7 +171,10 @@ fun DouyinVideoPlayer(
                 }
 
                 Lifecycle.Event.ON_RESUME -> {
-                    if (wasPlayingBeforePause && player.playbackState != Player.STATE_ENDED) {
+                    if (wasPlayingBeforePause &&
+                        !currentPause &&
+                        player.playbackState != Player.STATE_ENDED
+                    ) {
                         player.play()
                     }
                 }
@@ -196,7 +204,7 @@ fun DouyinVideoPlayer(
                 position = player.currentPosition.coerceAtLeast(0L)
             }
             duration = player.duration.coerceAtLeast(0L)
-            delay(250)
+            delay(120)
         }
     }
 
@@ -333,11 +341,20 @@ private fun VideoProgressLine(
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val fraction = dragFraction ?: if (duration > 0) {
+    val rawFraction = dragFraction ?: if (duration > 0) {
         (position.toFloat() / duration).coerceIn(0f, 1f)
     } else {
         0f
     }
+    val animatedFraction by animateFloatAsState(
+        targetValue = rawFraction,
+        animationSpec = if (dragFraction != null) {
+            snap()
+        } else {
+            tween(durationMillis = 150, easing = LinearEasing)
+        },
+        label = "video-progress",
+    )
 
     Box(
         modifier = modifier
@@ -381,7 +398,7 @@ private fun VideoProgressLine(
             drawLine(
                 color = Color.White,
                 start = Offset(0f, trackY),
-                end = Offset(size.width * fraction, trackY),
+                end = Offset(size.width * animatedFraction, trackY),
                 strokeWidth = 2.dp.toPx(),
                 cap = StrokeCap.Round,
             )
@@ -395,7 +412,7 @@ private fun VideoProgressLine(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val current = (duration * fraction).toLong()
+                val current = (duration * animatedFraction).toLong()
                 Text(
                     text = "${formatDuration(current)} / ${formatDuration(duration)}",
                     color = Color.White,

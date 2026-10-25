@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,70 +49,90 @@ import com.atqiyu.douyinkit.core.util.formatBytes
 import com.atqiyu.douyinkit.data.prefs.AppSettings
 import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.download.DownloadKind
+import com.atqiyu.douyinkit.download.DownloadRegistry
 import com.atqiyu.douyinkit.download.DownloadRequest
 import com.atqiyu.douyinkit.download.DownloadService
 import com.atqiyu.douyinkit.download.VideoGearSelector
+import com.atqiyu.douyinkit.download.collectExistingDownloadContent
+import com.atqiyu.douyinkit.download.findDuplicateDownloads
+import com.atqiyu.douyinkit.download.hasContentAfterSkip
+import com.atqiyu.douyinkit.download.toRef
+import kotlinx.coroutines.launch
 
 @Composable
-fun rememberDownloadRequester(onMessage: (String) -> Unit): (DownloadRequest) -> Unit {
+fun rememberDownloadRequester(onMessage: (String) -> Unit): (List<DownloadRequest>) -> Unit {
     val context = LocalContext.current
     val currentMessage by rememberUpdatedState(onMessage)
-    var pendingRequest by remember { mutableStateOf<DownloadRequest?>(null) }
+    var pendingRequests by remember { mutableStateOf<List<DownloadRequest>>(emptyList()) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { results ->
-        val request = pendingRequest ?: return@rememberLauncherForActivityResult
-        pendingRequest = null
+        val requests = pendingRequests
+        pendingRequests = emptyList()
+        if (requests.isEmpty()) return@rememberLauncherForActivityResult
         val storageDenied = Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
             results[Manifest.permission.WRITE_EXTERNAL_STORAGE] == false
         if (storageDenied) {
             currentMessage("需要存储权限才能保存到相册")
         } else {
-            startDownload(context, request, currentMessage)
+            startDownloads(context, requests, currentMessage)
         }
     }
 
     return remember(context) {
-        { request ->
-            val missing = buildList {
-                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
-                    ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                    ) != PackageManager.PERMISSION_GRANTED
-                ) {
-                    add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        { requests ->
+            if (requests.isNotEmpty()) {
+                val missing = buildList {
+                    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS,
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        add(Manifest.permission.POST_NOTIFICATIONS)
+                    }
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.POST_NOTIFICATIONS,
-                    ) != PackageManager.PERMISSION_GRANTED
-                ) {
-                    add(Manifest.permission.POST_NOTIFICATIONS)
+                if (missing.isEmpty()) {
+                    startDownloads(context, requests, currentMessage)
+                } else {
+                    pendingRequests = requests
+                    permissionLauncher.launch(missing.toTypedArray())
                 }
-            }
-            if (missing.isEmpty()) {
-                startDownload(context, request, currentMessage)
-            } else {
-                pendingRequest = request
-                permissionLauncher.launch(missing.toTypedArray())
             }
         }
     }
 }
 
-private fun startDownload(
+private fun startDownloads(
     context: android.content.Context,
-    request: DownloadRequest,
+    requests: List<DownloadRequest>,
     onMessage: (String) -> Unit,
 ) {
-    try {
-        DownloadService.enqueue(context, request)
-        onMessage("已加入下载队列")
-    } catch (error: Exception) {
-        onMessage("无法开始下载：${error.message ?: "未知错误"}")
+    var started = 0
+    var firstError: String? = null
+    requests.forEach { request ->
+        runCatching {
+            DownloadService.enqueue(context, request)
+        }.onSuccess {
+            started += 1
+        }.onFailure { error ->
+            if (firstError == null) firstError = error.message
+        }
+    }
+    when {
+        started == 0 -> onMessage("无法开始下载：${firstError ?: "未知错误"}")
+        firstError != null -> onMessage("已加入 $started 项下载，部分任务失败：$firstError")
+        started == 1 -> onMessage("已加入下载队列")
+        else -> onMessage("已加入下载队列（$started 项）")
     }
 }
 
@@ -121,11 +142,88 @@ fun ResultActions(
     onMessage: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    val repository = context.appContainer.downloadHistoryRepository
+    val scope = rememberCoroutineScope()
     val settings by context.appContainer.settingsRepository.settings
         .collectAsStateWithLifecycle(initialValue = AppSettings())
     val enqueue = rememberDownloadRequester(onMessage)
     var showQualitySheet by remember { mutableStateOf(false) }
     var showImageOptions by remember { mutableStateOf(false) }
+    var pendingRequests by remember { mutableStateOf<List<DownloadRequest>?>(null) }
+    var duplicateCheck by remember { mutableStateOf<com.atqiyu.douyinkit.download.DuplicateCheck?>(null) }
+    var checkingDuplicates by remember { mutableStateOf(false) }
+
+    fun submit(requests: List<DownloadRequest>) {
+        if (requests.isEmpty() || checkingDuplicates) return
+        checkingDuplicates = true
+        scope.launch {
+            try {
+                val existingTasks = runCatching {
+                    (DownloadRegistry.tasks.value + repository.allTasks()).distinctBy { it.id }
+                }.getOrElse { DownloadRegistry.tasks.value }
+                val existing = collectExistingDownloadContent(
+                    awemeId = requests.first().aweme.awemeId,
+                    tasks = existingTasks,
+                )
+                val check = findDuplicateDownloads(requests, existing)
+                if (check.hasDuplicates) {
+                    pendingRequests = requests
+                    duplicateCheck = check
+                } else {
+                    enqueue(requests)
+                }
+            } catch (_: Exception) {
+                enqueue(requests)
+            } finally {
+                checkingDuplicates = false
+            }
+        }
+    }
+
+    fun applyDuplicateChoice(action: DuplicateChoice) {
+        val requests = pendingRequests ?: return
+        val check = duplicateCheck ?: return
+        val matches = check.matches.associateBy { it.request }
+        val finalRequests = when (action) {
+            DuplicateChoice.SKIP -> requests.mapNotNull { request ->
+                val match = matches[request] ?: return@mapNotNull request
+                when (request.kind) {
+                    DownloadKind.IMAGES, DownloadKind.ZIP -> {
+                        if (request.hasContentAfterSkip(match.keys)) {
+                            request.copy(skipMediaKeys = match.keys)
+                        } else {
+                            null
+                        }
+                    }
+
+                    else -> null
+                }
+            }
+
+            DuplicateChoice.OVERWRITE -> requests.map { request ->
+                val match = matches[request]
+                if (match == null) {
+                    request
+                } else {
+                    request.copy(
+                        replaceFiles = match.contents
+                            .flatMap { it.files }
+                            .distinctBy { it.uri.toString() }
+                            .map { it.toRef() },
+                    )
+                }
+            }
+
+            DuplicateChoice.DUPLICATE -> requests
+        }
+        pendingRequests = null
+        duplicateCheck = null
+        if (finalRequests.isEmpty()) {
+            onMessage("重复内容已跳过，没有新的内容需要下载")
+        } else {
+            enqueue(finalRequests)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         when (aweme.kind) {
@@ -142,7 +240,11 @@ fun ResultActions(
                     if (aweme.music != null) {
                         OutlinedButton(
                             onClick = {
-                                enqueue(DownloadRequest(aweme = aweme, kind = DownloadKind.MUSIC))
+                                submit(
+                                    listOf(
+                                        DownloadRequest(aweme = aweme, kind = DownloadKind.MUSIC),
+                                    ),
+                                )
                             },
                             modifier = Modifier.weight(1f),
                         ) {
@@ -151,7 +253,11 @@ fun ResultActions(
                     }
                     OutlinedButton(
                         onClick = {
-                            enqueue(DownloadRequest(aweme = aweme, kind = DownloadKind.COVER))
+                            submit(
+                                listOf(
+                                    DownloadRequest(aweme = aweme, kind = DownloadKind.COVER),
+                                ),
+                            )
                         },
                         modifier = Modifier.weight(1f),
                         enabled = aweme.primaryCoverUrl != null,
@@ -174,7 +280,11 @@ fun ResultActions(
                     if (aweme.music != null) {
                         OutlinedButton(
                             onClick = {
-                                enqueue(DownloadRequest(aweme = aweme, kind = DownloadKind.MUSIC))
+                                submit(
+                                    listOf(
+                                        DownloadRequest(aweme = aweme, kind = DownloadKind.MUSIC),
+                                    ),
+                                )
                             },
                             modifier = Modifier.weight(1f),
                         ) {
@@ -183,7 +293,11 @@ fun ResultActions(
                     }
                     OutlinedButton(
                         onClick = {
-                            enqueue(DownloadRequest(aweme = aweme, kind = DownloadKind.COVER))
+                            submit(
+                                listOf(
+                                    DownloadRequest(aweme = aweme, kind = DownloadKind.COVER),
+                                ),
+                            )
                         },
                         modifier = Modifier.weight(1f),
                         enabled = aweme.primaryCoverUrl != null,
@@ -203,9 +317,11 @@ fun ResultActions(
             onDismiss = { showQualitySheet = false },
             onDownload = { gears ->
                 showQualitySheet = false
-                gears.forEach { gear ->
-                    enqueue(DownloadRequest(aweme = aweme, kind = DownloadKind.VIDEO, gear = gear))
-                }
+                submit(
+                    gears.map { gear ->
+                        DownloadRequest(aweme = aweme, kind = DownloadKind.VIDEO, gear = gear)
+                    },
+                )
             },
         )
     }
@@ -217,19 +333,37 @@ fun ResultActions(
             onDismiss = { showImageOptions = false },
             onStart = { includeLive, includeMusic, createZip ->
                 showImageOptions = false
-                enqueue(
-                    DownloadRequest(
-                        aweme = aweme,
-                        kind = DownloadKind.IMAGES,
-                        includeLivePhotos = includeLive,
-                        includeMusic = includeMusic,
-                        createZip = createZip,
+                submit(
+                    listOf(
+                        DownloadRequest(
+                            aweme = aweme,
+                            kind = DownloadKind.IMAGES,
+                            includeLivePhotos = includeLive,
+                            includeMusic = includeMusic,
+                            createZip = createZip,
+                        ),
                     ),
                 )
             },
         )
     }
+
+    duplicateCheck?.let { check ->
+        DuplicateDownloadDialog(
+            awemeTitle = aweme.displayTitle,
+            check = check,
+            onSkip = { applyDuplicateChoice(DuplicateChoice.SKIP) },
+            onOverwrite = { applyDuplicateChoice(DuplicateChoice.OVERWRITE) },
+            onDuplicate = { applyDuplicateChoice(DuplicateChoice.DUPLICATE) },
+            onDismiss = {
+                pendingRequests = null
+                duplicateCheck = null
+            },
+        )
+    }
 }
+
+private enum class DuplicateChoice { SKIP, OVERWRITE, DUPLICATE }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

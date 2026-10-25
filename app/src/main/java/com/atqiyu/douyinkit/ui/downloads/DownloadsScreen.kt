@@ -1,8 +1,10 @@
 package com.atqiyu.douyinkit.ui.downloads
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -92,6 +94,11 @@ fun DownloadsScreen() {
     var gridModeOverride by rememberSaveable { mutableStateOf<Boolean?>(null) }
     val gridMode = gridModeOverride ?: loadedSettings?.downloadsGridView ?: true
     var previewAwemeId by rememberSaveable { mutableStateOf<String?>(null) }
+    var previewInitialUri by remember { mutableStateOf<String?>(null) }
+    var cleanupOpen by remember { mutableStateOf(false) }
+    var partsGroup by remember { mutableStateOf<DownloadGroup?>(null) }
+    var partsSelectionUri by remember { mutableStateOf<String?>(null) }
+    var partDetails by remember { mutableStateOf<GroupMediaItem?>(null) }
     val previewGroup = groups.firstOrNull { it.awemeId == previewAwemeId }
 
     fun removeGroup(group: DownloadGroup) {
@@ -170,16 +177,11 @@ fun DownloadsScreen() {
                         )
                     }
                 }
-                if (groups.any { !it.isActive && it.tasks.any { task -> !task.isActiveDownload() } }) {
-                    IconButton(
-                        onClick = {
-                            DownloadRegistry.clearFinished()
-                            scope.launch { repository.clearFinished() }
-                        },
-                    ) {
+                if (groups.any { it.cleanupUnits().isNotEmpty() }) {
+                    IconButton(onClick = { cleanupOpen = true }) {
                         Icon(
                             imageVector = Icons.Default.DeleteSweep,
-                            contentDescription = "清理已结束的记录",
+                            contentDescription = "管理下载记录",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -203,12 +205,26 @@ fun DownloadsScreen() {
                 if (gridMode) {
                     DownloadGridCard(
                         group = group,
-                        onClick = { previewAwemeId = group.awemeId },
+                        onClick = {
+                            previewInitialUri = null
+                            previewAwemeId = group.awemeId
+                        },
+                        onLongClick = {
+                            partsGroup = group
+                            partsSelectionUri = group.featuredMedia?.file?.uri?.toString()
+                        },
                     )
                 } else {
                     DownloadListCard(
                         group = group,
-                        onClick = { previewAwemeId = group.awemeId },
+                        onClick = {
+                            previewInitialUri = null
+                            previewAwemeId = group.awemeId
+                        },
+                        onLongClick = {
+                            partsGroup = group
+                            partsSelectionUri = group.featuredMedia?.file?.uri?.toString()
+                        },
                     )
                 }
             }
@@ -218,8 +234,71 @@ fun DownloadsScreen() {
     if (previewGroup != null) {
         WorkPreviewDialog(
             group = previewGroup,
-            onDismiss = { previewAwemeId = null },
+            initialFileUri = previewInitialUri,
+            onDismiss = {
+                previewAwemeId = null
+                previewInitialUri = null
+            },
             onRemoveGroup = { removeGroup(it) },
+        )
+    }
+
+    partsGroup?.let { group ->
+        WorkPartsSheet(
+            group = group,
+            selectedUri = partsSelectionUri,
+            onSelect = { partsSelectionUri = it.file.uri.toString() },
+            onDismiss = { partsGroup = null },
+            onDetails = {
+                partDetails = it
+                partsGroup = null
+            },
+            onAnalyze = { item ->
+                previewInitialUri = item.file.uri.toString()
+                previewAwemeId = group.awemeId
+                partsGroup = null
+            },
+            onOpen = {
+                openSavedFile(context, it.file)
+                partsGroup = null
+            },
+        )
+    }
+
+    partDetails?.let { item ->
+        PartDetailsDialog(
+            item = item,
+            onDismiss = { partDetails = null },
+        )
+    }
+
+    if (cleanupOpen) {
+        DownloadCleanupDialog(
+            groups = groups,
+            onDismiss = { cleanupOpen = false },
+            onDelete = { units, deleteLocalFiles ->
+                cleanupOpen = false
+                scope.launch {
+                    val result = performDownloadCleanup(
+                        context = context,
+                        repository = repository,
+                        units = units,
+                        deleteLocalFiles = deleteLocalFiles,
+                    )
+                    val removedItems = (units.size - result.failedFiles.size).coerceAtLeast(0)
+                    val message = buildString {
+                        if (deleteLocalFiles) {
+                            append("已删除 ${result.deletedFiles} 个本地文件、$removedItems 个下载内容")
+                        } else {
+                            append("已移除 $removedItems 个下载内容记录")
+                        }
+                        if (result.failedFiles.isNotEmpty()) {
+                            append("；${result.failedFiles.size} 个文件删除失败，对应记录已保留")
+                        }
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                }
+            },
         )
     }
 }
@@ -253,15 +332,22 @@ private fun ViewModeButton(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DownloadGridCard(
     group: DownloadGroup,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onClickLabel = "打开作品预览",
+                onLongClickLabel = "选择作品内容",
+            ),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -369,15 +455,22 @@ private fun DownloadGridCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DownloadListCard(
     group: DownloadGroup,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onClickLabel = "打开作品预览",
+                onLongClickLabel = "选择作品内容",
+            ),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),

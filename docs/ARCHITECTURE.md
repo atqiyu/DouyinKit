@@ -37,13 +37,15 @@ Domain / data
 
 ```
 DownloadRequest (Aweme + kind + gear + options)
+  → 重复检查（记录 + 内存任务，按清晰度/图片/动图/BGM/封面/ZIP 的稳定 key）
   → DownloadService（前台服务，2 并发）
       → DownloadEngine
           ├─ 视频：gear.urls → playApi → 必要时 defaultUrls
-          ├─ 图片：urls → 可选 downloadUrls（水印兜底）
+          ├─ 图片：urls → 可选 downloadUrls（水印兜底）；支持 skipMediaKeys 跳过已存在项
           ├─ LivePhoto：urls → playApi → 可选 downloadUrls
           ├─ BGM：music.play_url 直链 → 失败时下载视频并 remux 音轨
           └─ ZIP：媒体 + info.json
+      → 覆盖策略：新内容完整保存后按 replaceFiles 删除旧文件/旧记录
       → FileDownloader（Range 续传、镜像容错、magic/大小校验）
       → MediaStoreSaver（API 29+ IS_PENDING；API 24–28 公共目录 + MediaScanner）
   → DownloadRegistry（内存进度）
@@ -54,6 +56,8 @@ DownloadRequest (Aweme + kind + gear + options)
 - `DownloadEngine` 先把文件下载到 app-specific external temp，成功后再发布到 MediaStore；任务结束清理 temp。
 - 视频候选失败全部为 403/401/410 时抛出 `EXPIRED`，服务标记 `NEEDS_REFRESH`，提示用户回前台重新解析；后台不会启动 WebView。
 - 下载 URL 经过 `UrlPolicy` 白名单，拒绝内网/IP/未知域名；OkHttp 最终重定向地址也会校验。
+- 重复检查在 UI 触发下载前执行：已有文件按媒体 key 汇总，提示用户跳过、覆盖或仍然重复下载。跳过会给图片请求写入 `skipMediaKeys`；覆盖把旧文件引用写入 `replaceFiles`，后台在新任务完整成功后清理，失败则保留旧文件。
+- 下载管理支持按作品/文件级删除。删除本地文件使用 MediaStore（旧系统回退到文件路径 + MediaScanner），只有文件删除成功才移除对应记录；也可只删记录保留文件。
 
 ## 数据
 
@@ -63,6 +67,10 @@ Room：
 
 DataStore：
 - 默认清晰度、优先 H.264、LivePhoto/BGM/ZIP 默认项、剪贴板识别、下载页网格/列表、主题/动态色、历史保留天数、免责声明状态
+
+下载请求扩展字段：
+- `skipMediaKeys`：跳过已存在的图片/动图/BGM/ZIP；
+- `replaceFiles`：覆盖模式下待清理的旧文件引用（URI + legacy path）。
 
 `HistoryRepository` 保存快照时保留已有收藏和标签；历史清理只删除非收藏记录。下载历史在 App 启动时把上次中断的 QUEUED/RUNNING 标记为失败。两个仓库都带有进程内 LRU 解码缓存，避免切换标签页时在主线程重复反序列化 Room 中的 JSON 快照。
 
@@ -82,8 +90,13 @@ DataStore：
 | `HistoryRepository` / `DownloadHistoryRepository` | 本地历史 |
 | `SettingsRepository` | DataStore 设置 |
 | `DownloadGroups` / `DownloadGroup` | 下载任务按 aweme_id 聚合、作品封面、媒体元数据与组级进度 |
+| `DownloadDuplicates` | 媒体 key、既有内容索引、重复匹配与跳过剩余判断 |
+| `DownloadFileCleaner` | MediaStore/旧路径文件删除、按 URI 清理下载记录 |
+| `DownloadCleanupDialog` | 作品/文件级删除选择、全选、是否删除本地文件 |
+| `WorkPartsSheet` | 下载卡片长按后的文件选择、文件详情与分析入口 |
 | `WorkPreviewDialog` | 作品级全屏预览：抖音式视频/图集/LivePhoto/BGM、作品与文件详情面板 |
-| `DouyinVideoPlayer` | 自定义交互的 Media3 播放器（单击暂停、拖动进度、右侧操作区） |
+| `DouyinVideoPlayer` | 自定义交互的 Media3 播放器（单击暂停、平滑拖动进度、检查器隐藏信息） |
+| `InlineLoopingVideo` | 图片 Pager 内的 LivePhoto 循环播放（TextureView，可继续左右滑动） |
 | `ImageViewerDialog` / `AudioPreviewDialog` | 结果页/详情页图片缩放与音频试听 |
 
 ## 生命周期与线程

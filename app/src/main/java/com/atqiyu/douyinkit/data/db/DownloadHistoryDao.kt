@@ -11,6 +11,9 @@ interface DownloadHistoryDao {
     @Query("SELECT * FROM download_history ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<DownloadHistoryEntity>>
 
+    @Query("SELECT * FROM download_history ORDER BY createdAt DESC")
+    suspend fun getAll(): List<DownloadHistoryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: DownloadHistoryEntity)
 

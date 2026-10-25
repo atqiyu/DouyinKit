@@ -112,58 +112,70 @@ class DownloadEngine(
             throw DownloadException(DownloadFailure.NO_SOURCE, "该作品没有图集图片")
         }
 
+        val skipKeys = request.skipMediaKeys
         val warnings = mutableListOf<String>()
         val savedFiles = mutableListOf<SavedFile>()
         val zipEntries = mutableListOf<ZipEntrySource>()
         val folder = DownloadNaming.imageFolder(aweme)
-        val liveCount = if (request.includeLivePhotos) {
-            aweme.images.count { it.isLivePhoto && it.livePhoto != null }
-        } else {
-            0
+        val imageFlags = aweme.images.mapIndexed { index, image ->
+            val downloadImage = DownloadMediaKeys.image(index) !in skipKeys
+            val downloadLive = request.includeLivePhotos &&
+                image.isLivePhoto &&
+                image.livePhoto != null &&
+                DownloadMediaKeys.live(index) !in skipKeys
+            downloadImage to downloadLive
         }
-        val musicCount = if (request.includeMusic && aweme.music != null) 1 else 0
-        val zipCount = if (request.createZip) 1 else 0
-        progress.totalItems = aweme.images.size + liveCount + musicCount + zipCount
+        val musicRequested = request.includeMusic &&
+            aweme.music != null &&
+            DownloadMediaKeys.MUSIC !in skipKeys
+        val zipRequested = request.createZip && DownloadMediaKeys.ZIP !in skipKeys
+
+        progress.totalItems = imageFlags.sumOf { (image, live) ->
+            (if (image) 1 else 0) + (if (live) 1 else 0)
+        } + (if (musicRequested) 1 else 0) + (if (zipRequested) 1 else 0)
         progress.totalBytes = null
 
         aweme.images.forEachIndexed { index, image ->
             currentCoroutineContext().ensureActive()
-            val candidates = buildList {
-                addAll(image.urls)
-                if (request.allowWatermarkedFallback) addAll(image.downloadUrls)
-            }
-            if (candidates.isEmpty()) {
-                warnings += "第 ${index + 1} 张图片没有下载地址"
-                progress.itemDone()
-                return@forEachIndexed
-            }
+            val downloadImage = imageFlags[index].first
+            val downloadLive = imageFlags[index].second
 
-            val temp = File(tempDir, "image_${index + 1}")
-            try {
-                val media = downloader.download(
-                    candidates = candidates,
-                    destination = temp,
-                    expectedSize = null,
-                    kind = MediaKind.IMAGE,
-                ) { bytes, _ -> progress.updateBytes(bytes) }
-                val displayName = DownloadNaming.imageDisplayName(index, media.extension)
-                val saved = saver.saveImage(
-                    source = media.file,
-                    displayName = displayName,
-                    mimeType = media.mimeType,
-                    folder = "DouyinKit/$folder",
-                )
-                savedFiles += saved
-                zipEntries += ZipEntrySource(media.file, displayName)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                warnings += "第 ${index + 1} 张图片下载失败：${error.message}"
+            if (downloadImage) {
+                val candidates = buildList {
+                    addAll(image.urls)
+                    if (request.allowWatermarkedFallback) addAll(image.downloadUrls)
+                }
+                if (candidates.isEmpty()) {
+                    warnings += "第 ${index + 1} 张图片没有下载地址"
+                } else {
+                    val temp = File(tempDir, "image_${index + 1}")
+                    try {
+                        val media = downloader.download(
+                            candidates = candidates,
+                            destination = temp,
+                            expectedSize = null,
+                            kind = MediaKind.IMAGE,
+                        ) { bytes, _ -> progress.updateBytes(bytes) }
+                        val displayName = DownloadNaming.imageDisplayName(index, media.extension)
+                        val saved = saver.saveImage(
+                            source = media.file,
+                            displayName = displayName,
+                            mimeType = media.mimeType,
+                            folder = "DouyinKit/$folder",
+                        )
+                        savedFiles += saved
+                        zipEntries += ZipEntrySource(media.file, displayName)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        warnings += "第 ${index + 1} 张图片下载失败：${error.message}"
+                    }
+                }
+                progress.itemDone()
             }
-            progress.itemDone()
 
             val live = image.livePhoto
-            if (request.includeLivePhotos && image.isLivePhoto && live != null) {
+            if (downloadLive && live != null) {
                 currentCoroutineContext().ensureActive()
                 val liveCandidates = buildList {
                     addAll(live.urls)
@@ -172,7 +184,6 @@ class DownloadEngine(
                 }
                 if (liveCandidates.isEmpty()) {
                     warnings += "第 ${index + 1} 张动图没有视频地址"
-                    progress.itemDone()
                 } else {
                     val liveTemp = File(tempDir, "image_${index + 1}_live.mp4")
                     try {
@@ -195,15 +206,14 @@ class DownloadEngine(
                     } catch (error: Exception) {
                         warnings += "第 ${index + 1} 张动图下载失败：${error.message}"
                     }
-                    progress.itemDone()
                 }
+                progress.itemDone()
             }
         }
 
-        var musicFile: DownloadedMedia? = null
-        if (request.includeMusic && aweme.music != null) {
+        if (musicRequested) {
             currentCoroutineContext().ensureActive()
-            musicFile = try {
+            val musicFile = try {
                 downloadMusic(aweme, request.gear, tempDir) { bytes, _ ->
                     progress.updateBytes(bytes)
                 }
@@ -227,7 +237,7 @@ class DownloadEngine(
         }
 
         var zipSaved: SavedFile? = null
-        if (request.createZip) {
+        if (zipRequested) {
             currentCoroutineContext().ensureActive()
             val info = buildPostInfo(aweme, zipEntries.map { it.entryName })
             val zipTemp = File(tempDir, "post.zip")
