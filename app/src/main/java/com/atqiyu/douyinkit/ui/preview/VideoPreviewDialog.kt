@@ -1,12 +1,15 @@
 package com.atqiyu.douyinkit.ui.preview
 
-import android.view.ViewGroup
-import android.widget.FrameLayout
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
@@ -14,86 +17,23 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
-import com.atqiyu.douyinkit.core.net.DouyinUserAgent
 
-@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun VideoPreviewDialog(
     url: String,
     title: String,
     onDismiss: () -> Unit,
 ) {
-    val context = LocalContext.current
     val isLocal = url.startsWith("content://") || url.startsWith("file://")
-    var error by remember(url) { mutableStateOf<String?>(null) }
-
-    val player = remember(url) {
-        ExoPlayer.Builder(context).build().apply {
-            val mediaSource = if (isLocal) {
-                ProgressiveMediaSource.Factory(DefaultDataSource.Factory(context))
-                    .createMediaSource(MediaItem.fromUri(url))
-            } else {
-                val dataSourceFactory = DefaultHttpDataSource.Factory()
-                    .setDefaultRequestProperties(
-                        mapOf(
-                            "Referer" to DouyinUserAgent.REFERER,
-                            "User-Agent" to DouyinUserAgent.DESKTOP_FALLBACK,
-                        ),
-                    )
-                    .setAllowCrossProtocolRedirects(true)
-                ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(url))
-            }
-            setMediaSource(mediaSource)
-            prepare()
-            playWhenReady = true
-            addListener(
-                object : Player.Listener {
-                    override fun onPlayerError(playbackException: PlaybackException) {
-                        val message = playbackException.message.orEmpty()
-                        error = when {
-                            message.contains("decoder", ignoreCase = true) ||
-                                message.contains("codec", ignoreCase = true) ->
-                                "当前设备无法解码该视频，建议下载 H.264 版本"
-
-                            isLocal -> "文件无法播放，可能已损坏"
-                            else -> "视频加载失败，链接可能已过期"
-                        }
-                    }
-                },
-            )
-        }
-    }
-
-    DisposableEffect(player) {
-        onDispose {
-            player.release()
-        }
-    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -108,58 +48,51 @@ fun VideoPreviewDialog(
                 .fillMaxSize()
                 .background(Color.Black),
         ) {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        this.player = player
-                        useController = true
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        layoutParams = FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                        )
-                    }
-                },
+            DouyinVideoPlayer(
+                url = url,
                 modifier = Modifier.fillMaxSize(),
             )
 
-            IconButton(
-                onClick = onDismiss,
+            Row(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.62f), Color.Transparent),
+                        ),
+                    )
                     .statusBarsPadding()
-                    .padding(8.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "关闭预览",
-                    tint = Color.White,
-                )
-            }
-
-            if (error != null) {
-                Text(
-                    text = error ?: "",
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
+                IconButton(
+                    onClick = onDismiss,
                     modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(32.dp),
-                )
-            }
-
-            if (title.isNotBlank()) {
-                Text(
-                    text = title,
-                    color = Color.White.copy(alpha = 0.8f),
-                    style = MaterialTheme.typography.labelMedium,
-                    maxLines = 2,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .statusBarsPadding()
-                        .padding(start = 16.dp, end = 56.dp, top = 16.dp),
-                )
+                        .background(Color.Black.copy(alpha = 0.28f), CircleShape),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "关闭预览",
+                        tint = Color.White,
+                    )
+                }
+                Column(modifier = Modifier.padding(end = 48.dp)) {
+                    Text(
+                        text = title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = if (isLocal) "本地预览" else "在线预览",
+                        color = Color.White.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
             }
         }
     }

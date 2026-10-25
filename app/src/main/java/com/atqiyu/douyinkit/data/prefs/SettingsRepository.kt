@@ -26,6 +26,7 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = false,
     val historyRetentionDays: Int = 90,
+    val downloadsGridView: Boolean = true,
     val onboardingAccepted: Boolean = false,
 )
 
@@ -53,6 +54,7 @@ class SettingsRepository(private val context: Context) {
                 }.getOrDefault(ThemeMode.SYSTEM),
                 dynamicColor = prefs[KEY_DYNAMIC_COLOR] ?: false,
                 historyRetentionDays = prefs[KEY_RETENTION_DAYS] ?: 90,
+                downloadsGridView = prefs[KEY_DOWNLOADS_GRID] ?: true,
                 onboardingAccepted = prefs[KEY_ONBOARDING] ?: false,
             )
         }
@@ -93,6 +95,10 @@ class SettingsRepository(private val context: Context) {
         dataStore.edit { it[KEY_RETENTION_DAYS] = days }
     }
 
+    suspend fun setDownloadsGridView(enabled: Boolean) {
+        dataStore.edit { it[KEY_DOWNLOADS_GRID] = enabled }
+    }
+
     suspend fun setOnboardingAccepted(accepted: Boolean) {
         dataStore.edit { it[KEY_ONBOARDING] = accepted }
     }
@@ -107,6 +113,7 @@ class SettingsRepository(private val context: Context) {
         val KEY_THEME = stringPreferencesKey("theme_mode")
         val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val KEY_RETENTION_DAYS = intPreferencesKey("history_retention_days")
+        val KEY_DOWNLOADS_GRID = booleanPreferencesKey("downloads_grid_view")
         val KEY_ONBOARDING = booleanPreferencesKey("onboarding_accepted")
     }
 }

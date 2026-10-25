@@ -69,9 +69,22 @@ class HistoryRepository(
     }
 
     fun decode(entity: AwemeEntity): Aweme? {
-        return runCatching {
+        synchronized(decodeCache) {
+            decodeCache[entity.awemeId]
+                ?.takeIf { it.parsedAt == entity.parsedAt && it.snapshotLength == entity.snapshotJson.length }
+                ?.let { return it.aweme }
+        }
+        val aweme = runCatching {
             json.decodeFromString(Aweme.serializer(), entity.snapshotJson)
-        }.getOrNull()
+        }.getOrNull() ?: return null
+        synchronized(decodeCache) {
+            decodeCache[entity.awemeId] = CachedAweme(
+                parsedAt = entity.parsedAt,
+                snapshotLength = entity.snapshotJson.length,
+                aweme = aweme,
+            )
+        }
+        return aweme
     }
 
     fun tagsOf(entity: AwemeEntity): List<String> {
@@ -86,5 +99,17 @@ class HistoryRepository(
             .distinct()
             .take(12)
             .joinToString(",")
+    }
+
+    private data class CachedAweme(
+        val parsedAt: Long,
+        val snapshotLength: Int,
+        val aweme: Aweme,
+    )
+
+    private val decodeCache = object : LinkedHashMap<String, CachedAweme>(24, 0.75f, true) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<String, CachedAweme>?,
+        ): Boolean = size > 48
     }
 }

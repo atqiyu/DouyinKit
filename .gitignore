@@ -33,3 +33,6 @@ scratch/
 .zcode/
 .DS_Store
 Thumbs.db
+
+# Local verification artifacts
+.zcode-artifacts/

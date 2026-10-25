@@ -4,6 +4,7 @@ import android.app.Application
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.video.VideoFrameDecoder
 import com.atqiyu.douyinkit.core.net.DouyinUserAgent
 import com.atqiyu.douyinkit.di.AppContainer
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +45,7 @@ class DouyinKitApp : Application() {
             ImageLoader.Builder(context)
                 .components {
                     add(OkHttpNetworkFetcherFactory(callFactory = { imageClient }))
+                    add(VideoFrameDecoder.Factory())
                 }
                 .build()
         }

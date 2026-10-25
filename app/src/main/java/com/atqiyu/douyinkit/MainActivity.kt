@@ -11,22 +11,28 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.SideEffect
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.app.ActivityOptionsCompat
@@ -135,43 +141,55 @@ private fun MainContent(sharedTextFlow: MutableStateFlow<String>) {
                 onExit = { (context as? Activity)?.finish() },
             )
         }
-        AnimatedContent(
-            targetState = visibleResult,
-            transitionSpec = {
-                (
-                    fadeIn(tween(220)) +
-                        slideInVertically(tween(220)) { it / 18 }
-                    ).togetherWith(
-                    fadeOut(tween(160)) +
-                        slideOutVertically(tween(160)) { -it / 24 },
-                )
-            },
-            label = "result-transition",
-        ) { result ->
-            if (result != null) {
-                BackHandler { visibleResult = null }
-                ResultScreen(
-                    result = result,
-                    onBack = { visibleResult = null },
-                )
-            } else {
-                MainScreen(
-                    initialText = sharedText,
-                    onParse = { input ->
-                        val options = ActivityOptionsCompat.makeCustomAnimation(
-                            context,
-                            android.R.anim.fade_in,
-                            android.R.anim.fade_out,
+        var displayedResult by remember { mutableStateOf<ParseBatchResult?>(null) }
+        LaunchedEffect(visibleResult) {
+            visibleResult?.let { displayedResult = it }
+        }
+        val resultVisible = visibleResult != null
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            MainScreen(
+                initialText = sharedText,
+                onParse = { input ->
+                    val options = ActivityOptionsCompat.makeCustomAnimation(
+                        context,
+                        android.R.anim.fade_in,
+                        android.R.anim.fade_out,
+                    )
+                    parseLauncher.launch(
+                        ParseActivity.intent(
+                            context = context,
+                            inputs = listOf(input),
+                        ),
+                        options,
+                    )
+                },
+            )
+
+            AnimatedVisibility(
+                visible = resultVisible,
+                modifier = Modifier.fillMaxSize(),
+                enter = fadeIn(tween(180)) + slideInVertically(tween(240)) { it / 22 },
+                exit = fadeOut(tween(140)) + slideOutVertically(tween(180)) { it / 28 },
+            ) {
+                BackHandler(enabled = resultVisible) { visibleResult = null }
+                val result = displayedResult
+                if (result != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { },
+                    ) {
+                        ResultScreen(
+                            result = result,
+                            onBack = { visibleResult = null },
                         )
-                        parseLauncher.launch(
-                            ParseActivity.intent(
-                                context = context,
-                                inputs = listOf(input),
-                            ),
-                            options,
-                        )
-                    },
-                )
+                    }
+                }
             }
         }
     }

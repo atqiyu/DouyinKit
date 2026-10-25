@@ -2,8 +2,12 @@ package com.atqiyu.douyinkit.ui.home
 
 import android.content.ClipboardManager
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,7 +58,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,16 +76,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.atqiyu.douyinkit.R
 import com.atqiyu.douyinkit.core.model.Aweme
 import com.atqiyu.douyinkit.core.model.AwemeKind
-import com.atqiyu.douyinkit.core.util.LinkExtractor
-import com.atqiyu.douyinkit.data.prefs.AppSettings
 import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.ui.theme.BrandCyan
 import com.atqiyu.douyinkit.ui.theme.BrandPink
@@ -96,107 +95,28 @@ fun HomeScreen(
     onParse: (String) -> Unit = {},
     onOpenRecent: (Aweme) -> Unit = {},
     onOpenLibrary: () -> Unit = {},
+    clipboardLink: String? = null,
+    onDismissClipboard: () -> Unit = {},
     contentWindowInsets: WindowInsets = ScaffoldDefaults.contentWindowInsets,
 ) {
     var input by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val appSettings by context.applicationContext.appContainer.settingsRepository.settings
-        .collectAsStateWithLifecycle(initialValue = AppSettings())
     val historyRepository = context.applicationContext.appContainer.historyRepository
     val recentEntities by historyRepository.observeAll()
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val recentAwemes = remember(recentEntities) {
         recentEntities.take(6).mapNotNull { historyRepository.decode(it) }
     }
-    var clipboardLink by remember { mutableStateOf<String?>(null) }
-    var lastClipboardHash by rememberSaveable { mutableStateOf(Int.MIN_VALUE) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    androidx.compose.runtime.LaunchedEffect(initialText) {
+    var lastShownClipboardLink by remember { mutableStateOf<String?>(null) }
+    val bannerLink = clipboardLink ?: lastShownClipboardLink
+    LaunchedEffect(clipboardLink) {
+        clipboardLink?.let { lastShownClipboardLink = it }
+    }
+    LaunchedEffect(initialText) {
         if (initialText.isNotBlank()) {
             input = initialText
-        }
-    }
-
-    androidx.compose.runtime.LaunchedEffect(appSettings.clipboardDetection) {
-        if (!appSettings.clipboardDetection) {
-            clipboardLink = null
-        }
-    }
-
-    DisposableEffect(lifecycleOwner, appSettings.clipboardDetection) {
-        if (!appSettings.clipboardDetection) {
-            return@DisposableEffect onDispose { }
-        }
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-            ?: return@DisposableEffect onDispose { }
-        val handler = Handler(Looper.getMainLooper())
-        var registered = false
-
-        fun inspectClipboard() {
-            runCatching {
-                if (!clipboard.hasPrimaryClip()) return@runCatching
-                val clip = clipboard.primaryClip ?: return@runCatching
-                if (clip.itemCount <= 0) return@runCatching
-                val text = clip.getItemAt(0).coerceToText(context)?.toString().orEmpty()
-                if (text.isBlank()) return@runCatching
-                val hash = text.hashCode()
-                if (hash == lastClipboardHash) return@runCatching
-                lastClipboardHash = hash
-                clipboardLink = LinkExtractor.extractFirst(text)?.url
-            }
-        }
-
-        val inspectRunnable = Runnable { inspectClipboard() }
-        val listener = ClipboardManager.OnPrimaryClipChangedListener {
-            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-                inspectClipboard()
-            }
-        }
-
-        fun register() {
-            if (!registered) {
-                clipboard.addPrimaryClipChangedListener(listener)
-                registered = true
-            }
-        }
-
-        fun unregister() {
-            if (registered) {
-                clipboard.removePrimaryClipChangedListener(listener)
-                registered = false
-            }
-        }
-
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> {
-                    register()
-                    handler.removeCallbacks(inspectRunnable)
-                    handler.postDelayed(inspectRunnable, 350)
-                }
-
-                Lifecycle.Event.ON_PAUSE -> {
-                    unregister()
-                    handler.removeCallbacks(inspectRunnable)
-                }
-
-                else -> Unit
-            }
-        }
-
-        lifecycleOwner.lifecycle.addObserver(observer)
-        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-            register()
-            handler.postDelayed(inspectRunnable, 350)
-        }
-
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            unregister()
-            handler.removeCallbacks(inspectRunnable)
         }
     }
 
@@ -233,17 +153,27 @@ fun HomeScreen(
             FeatureChips()
             Spacer(Modifier.height(14.dp))
 
-            clipboardLink?.let { link ->
-                ClipboardBanner(
-                    link = link,
-                    onParseNow = {
-                        input = link
-                        clipboardLink = null
-                        onParse(link)
-                    },
-                    onDismiss = { clipboardLink = null },
-                )
-                Spacer(Modifier.height(12.dp))
+            AnimatedVisibility(
+                visible = clipboardLink != null,
+                enter = fadeIn(tween(160)) +
+                    expandVertically(tween(220), expandFrom = Alignment.Top),
+                exit = fadeOut(tween(120)) +
+                    shrinkVertically(tween(180), shrinkTowards = Alignment.Top),
+            ) {
+                Column {
+                    bannerLink?.let { link ->
+                        ClipboardBanner(
+                            link = link,
+                            onParseNow = {
+                                input = link
+                                onDismissClipboard()
+                                onParse(link)
+                            },
+                            onDismiss = onDismissClipboard,
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
             }
 
             InputCard(

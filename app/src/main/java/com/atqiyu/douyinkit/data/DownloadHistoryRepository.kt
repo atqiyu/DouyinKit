@@ -50,6 +50,11 @@ class DownloadHistoryRepository(
     }
 
     fun toTask(entity: DownloadHistoryEntity): DownloadTask? {
+        synchronized(taskCache) {
+            taskCache[entity.taskId]
+                ?.takeIf { it.updatedAt == entity.updatedAt }
+                ?.let { return it.task }
+        }
         return runCatching {
             val request = json.decodeFromString(
                 DownloadRequest.serializer(),
@@ -81,24 +86,32 @@ class DownloadHistoryRepository(
                 zip = zip,
                 error = if (status == DownloadStatus.FAILED) entity.message else null,
                 createdAt = entity.createdAt,
-            )
+            ).also { task ->
+                synchronized(taskCache) {
+                    taskCache[entity.taskId] = CachedTask(entity.updatedAt, task)
+                }
+            }
         }.getOrNull()
     }
 
     suspend fun markInterrupted() {
         dao.markInterrupted()
+        synchronized(taskCache) { taskCache.clear() }
     }
 
     suspend fun remove(taskId: String) {
         dao.delete(taskId)
+        synchronized(taskCache) { taskCache.remove(taskId) }
     }
 
     suspend fun clearFinished() {
         dao.clearFinished()
+        synchronized(taskCache) { taskCache.clear() }
     }
 
     suspend fun clearAll() {
         dao.clearAll()
+        synchronized(taskCache) { taskCache.clear() }
     }
 
     private fun SavedFile.toRecord(): SavedFileRecord {
@@ -121,6 +134,17 @@ class DownloadHistoryRepository(
                 bytes = bytes,
             )
         }.getOrNull()
+    }
+
+    private data class CachedTask(
+        val updatedAt: Long,
+        val task: DownloadTask,
+    )
+
+    private val taskCache = object : LinkedHashMap<String, CachedTask>(16, 0.75f, true) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<String, CachedTask>?,
+        ): Boolean = size > 64
     }
 
     @Serializable

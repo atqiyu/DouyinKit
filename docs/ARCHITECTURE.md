@@ -8,7 +8,7 @@ DouyinKit 是单模块原生 Android App，核心约束是**无服务器、无�
 Compose UI
   ├─ Home / Clipboard
   ├─ ParseActivity (WebView)
-  ├─ Result / Preview / Downloads / Library / Settings
+  ├─ Result / Preview / Downloads (grouped by work) / Library / Settings
   └─ DownloadService (foreground)
         │
 Domain / data
@@ -62,9 +62,9 @@ Room：
 - `download_history`：任务状态、请求 JSON、文件/zip URI、重试所需信息
 
 DataStore：
-- 默认清晰度、优先 H.264、LivePhoto/BGM/ZIP 默认项、剪贴板识别、主题/动态色、历史保留天数、免责声明状态
+- 默认清晰度、优先 H.264、LivePhoto/BGM/ZIP 默认项、剪贴板识别、下载页网格/列表、主题/动态色、历史保留天数、免责声明状态
 
-`HistoryRepository` 保存快照时保留已有收藏和标签；历史清理只删除非收藏记录。下载历史在 App 启动时把上次中断的 QUEUED/RUNNING 标记为失败。
+`HistoryRepository` 保存快照时保留已有收藏和标签；历史清理只删除非收藏记录。下载历史在 App 启动时把上次中断的 QUEUED/RUNNING 标记为失败。两个仓库都带有进程内 LRU 解码缓存，避免切换标签页时在主线程重复反序列化 Room 中的 JSON 快照。
 
 ## 关键类
 
@@ -81,6 +81,10 @@ DataStore：
 | `DownloadService` | 前台服务、通知、取消、持久化状态 |
 | `HistoryRepository` / `DownloadHistoryRepository` | 本地历史 |
 | `SettingsRepository` | DataStore 设置 |
+| `DownloadGroups` / `DownloadGroup` | 下载任务按 aweme_id 聚合、作品封面、媒体元数据与组级进度 |
+| `WorkPreviewDialog` | 作品级全屏预览：抖音式视频/图集/LivePhoto/BGM、作品与文件详情面板 |
+| `DouyinVideoPlayer` | 自定义交互的 Media3 播放器（单击暂停、拖动进度、右侧操作区） |
+| `ImageViewerDialog` / `AudioPreviewDialog` | 结果页/详情页图片缩放与音频试听 |
 
 ## 生命周期与线程
 
@@ -88,3 +92,4 @@ DataStore：
 - 解析只在 App 前台进行；下载在 `DownloadService` 中继续，Activity 可离开。
 - WebView 回调在主线程；Room/下载在 IO；UI 通过 StateFlow 观察。
 - 手动 DI（`AppContainer`）避免 Hilt 构建复杂度；所有依赖从 `Application` 或 `Context.appContainer` 获取。
+- `MainScreen` 保留已访问标签页的 Composition（未显示页面跳过测量与绘制），切换时只做约 180 ms 的 alpha/位移过渡，不重建页面；剪贴板监听提升到 `MainScreen` 生命周期，避免切标签重复注册和重复解析。`MainActivity` 的结果页和资料库详情页都以覆盖层呈现，底层页面保持存活，系统返回键由对应层级消费。
