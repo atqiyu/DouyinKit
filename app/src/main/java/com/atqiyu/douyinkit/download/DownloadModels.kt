@@ -84,7 +84,11 @@ data class DownloadProgress(
     val itemsDone: Int = 0,
     val itemsTotal: Int = 0,
     val speedBps: Long = 0,
-)
+) {
+    /** Keeps "downloaded / total" readable even if a CDN reports a size below the bytes received. */
+    val displayBytes: Long
+        get() = total?.takeIf { it > 0 }?.let { bytes.coerceIn(0L, it) } ?: bytes
+}
 
 @Serializable
 data class DownloadRequest(

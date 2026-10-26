@@ -167,7 +167,6 @@ fun WorkPreviewDialog(
     }
     val imageBgmEnabled = group.aweme.kind == AwemeKind.IMAGES &&
         selected?.kind == GroupMediaKind.IMAGE &&
-        playingLiveUri == null &&
         audioPreview == null
 
     LaunchedEffect(pagerState.currentPage) {
@@ -228,6 +227,7 @@ fun WorkPreviewDialog(
                                     url = liveUri.orEmpty(),
                                     modifier = Modifier.fillMaxSize(),
                                     pause = audioPreview != null,
+                                    muteAudio = imageBgmUrl != null,
                                 )
                             } else {
                                 AsyncImage(
@@ -1263,9 +1263,9 @@ private fun ActiveTaskRow(task: DownloadTask) {
                 text = buildString {
                     val total = task.progress.total
                     if (total != null && total > 0) {
-                        append("${formatBytes(task.progress.bytes)} / ${formatBytes(total)}")
+                        append("${formatBytes(task.progress.displayBytes)} / ${formatBytes(total)}")
                     } else {
-                        append(formatBytes(task.progress.bytes))
+                        append(formatBytes(task.progress.displayBytes))
                     }
                     if (task.progress.itemsTotal > 1) {
                         append(" · ${task.progress.itemsDone}/${task.progress.itemsTotal}")

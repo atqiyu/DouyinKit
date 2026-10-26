@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -50,11 +52,13 @@ import java.util.Locale
 fun WorkPartsSheet(
     group: DownloadGroup,
     selectedUri: String?,
+    currentCollectionName: String?,
     onSelect: (GroupMediaItem) -> Unit,
     onDismiss: () -> Unit,
     onDetails: (GroupMediaItem) -> Unit,
     onAnalyze: (GroupMediaItem) -> Unit,
     onOpen: (GroupMediaItem) -> Unit,
+    onMoveToCollection: () -> Unit,
 ) {
     val selected = group.mediaItems.firstOrNull {
         it.file.uri.toString() == selectedUri
@@ -103,7 +107,7 @@ fun WorkPartsSheet(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 400.dp),
+                        .heightIn(max = 300.dp),
                     contentPadding = PaddingValues(vertical = 2.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
@@ -150,6 +154,25 @@ fun WorkPartsSheet(
                 ) {
                     Text("打开", maxLines = 1, softWrap = false)
                 }
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onMoveToCollection,
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = currentCollectionName?.let { "已在合集「$it」· 点击移动" }
+                        ?: "移动到合集",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

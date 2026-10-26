@@ -69,7 +69,6 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.atqiyu.douyinkit.core.net.DouyinUserAgent
-import com.atqiyu.douyinkit.ui.theme.BrandPink
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -356,13 +355,13 @@ private fun VideoProgressLine(
     )
     val scrubHighlight by animateFloatAsState(
         targetValue = if (dragFraction != null) 1f else 0f,
-        animationSpec = tween(durationMillis = 120, easing = LinearEasing),
+        animationSpec = tween(durationMillis = 130, easing = LinearEasing),
         label = "video-progress-highlight",
     )
 
     Box(
         modifier = modifier
-            .height(30.dp)
+            .height(58.dp)
             .pointerInput(duration) {
                 if (duration <= 0) return@pointerInput
                 awaitEachGesture {
@@ -389,13 +388,22 @@ private fun VideoProgressLine(
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(30.dp),
+                .height(58.dp),
         ) {
-            val trackY = size.height - 2.dp.toPx()
+            val trackY = size.height - 6.dp.toPx()
             val activeX = size.width * animatedFraction
-            val activeColor = lerp(Color.White, BrandPink, scrubHighlight)
+            val activeColor = lerp(Color.White, ScrubRed, scrubHighlight)
             val inactiveColor = Color.White.copy(alpha = 0.28f + 0.22f * scrubHighlight)
-            val activeStroke = 2.dp.toPx() + 2.dp.toPx() * scrubHighlight
+            val activeStroke = 2.5.dp.toPx() + 3.5.dp.toPx() * scrubHighlight
+            if (scrubHighlight > 0.01f) {
+                drawLine(
+                    color = ScrubRedGlow.copy(alpha = 0.24f * scrubHighlight),
+                    start = Offset(0f, trackY),
+                    end = Offset(activeX, trackY),
+                    strokeWidth = 13.dp.toPx() * scrubHighlight,
+                    cap = StrokeCap.Round,
+                )
+            }
             drawLine(
                 color = inactiveColor,
                 start = Offset(0f, trackY),
@@ -411,28 +419,28 @@ private fun VideoProgressLine(
                 cap = StrokeCap.Round,
             )
             if (scrubHighlight > 0.01f) {
-                val knobY = trackY - 13.dp.toPx() * scrubHighlight
-                val knobRadius = 5.dp.toPx() * scrubHighlight
+                val knobY = trackY - 19.dp.toPx() * scrubHighlight
+                val knobRadius = 6.dp.toPx() * scrubHighlight
                 drawLine(
-                    color = BrandPink.copy(alpha = 0.85f),
+                    color = ScrubRed.copy(alpha = 0.92f),
                     start = Offset(activeX, knobY),
                     end = Offset(activeX, trackY),
-                    strokeWidth = 2.dp.toPx(),
+                    strokeWidth = 2.5.dp.toPx(),
                     cap = StrokeCap.Round,
                 )
                 drawCircle(
-                    color = BrandPink.copy(alpha = 0.22f * scrubHighlight),
-                    radius = knobRadius * 2.15f,
+                    color = ScrubRedGlow.copy(alpha = 0.3f * scrubHighlight),
+                    radius = knobRadius * 2.7f,
                     center = Offset(activeX, knobY),
                 )
                 drawCircle(
-                    color = BrandPink,
+                    color = ScrubRed,
                     radius = knobRadius,
                     center = Offset(activeX, knobY),
                 )
                 drawCircle(
                     color = Color.White,
-                    radius = knobRadius * 0.36f,
+                    radius = knobRadius * 0.38f,
                     center = Offset(activeX, knobY),
                 )
             }
@@ -440,3 +448,6 @@ private fun VideoProgressLine(
 
     }
 }
+
+private val ScrubRed = Color(0xFFFF3B5C)
+private val ScrubRedGlow = Color(0xFFFF6680)

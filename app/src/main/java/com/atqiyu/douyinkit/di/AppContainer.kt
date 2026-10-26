@@ -3,6 +3,7 @@ package com.atqiyu.douyinkit.di
 import android.content.Context
 import com.atqiyu.douyinkit.DouyinKitApp
 import com.atqiyu.douyinkit.core.net.HttpClients
+import com.atqiyu.douyinkit.data.DownloadCollectionRepository
 import com.atqiyu.douyinkit.data.DownloadHistoryRepository
 import com.atqiyu.douyinkit.data.HistoryRepository
 import com.atqiyu.douyinkit.data.db.AppDatabase
@@ -17,6 +18,8 @@ class AppContainer(context: Context) {
     val historyRepository: HistoryRepository = HistoryRepository(database.awemeDao())
     val downloadHistoryRepository: DownloadHistoryRepository =
         DownloadHistoryRepository(database.downloadHistoryDao())
+    val downloadCollectionRepository: DownloadCollectionRepository =
+        DownloadCollectionRepository(database.downloadCollectionDao())
     val settingsRepository: SettingsRepository = SettingsRepository(appContext)
 
     fun newShortLinkResolver(): ShortLinkResolver = ShortLinkResolver(HttpClients.shortLink())

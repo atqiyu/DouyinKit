@@ -42,6 +42,32 @@ class VideoGearSelectorTest {
     }
 
     @Test
+    fun highestQualityChoosesLargestResolutionAndPrefersH264AtThatResolution() {
+        val aweme = aweme(
+            gear("gear_4k_h265", 2160, 3840, VideoCodec.H265, 6_000_000),
+            gear("gear_4k_h264", 2160, 3840, VideoCodec.H264, 5_000_000),
+            gear("gear_1080", 1080, 1920, VideoCodec.H264, 4_600_000),
+        )
+
+        assertEquals(
+            "gear_4k_h264",
+            VideoGearSelector.select(
+                aweme,
+                preferH264 = true,
+                preferredHeight = VideoGearSelector.HIGHEST_QUALITY,
+            )?.name,
+        )
+        assertEquals(
+            "gear_4k_h265",
+            VideoGearSelector.select(
+                aweme,
+                preferH264 = false,
+                preferredHeight = VideoGearSelector.HIGHEST_QUALITY,
+            )?.name,
+        )
+    }
+
+    @Test
     fun prefersNormal1080GearWhenPresent() {
         val aweme = aweme(
             gear("gear_1080", 1080, 1920, VideoCodec.H264, 4_600_000),

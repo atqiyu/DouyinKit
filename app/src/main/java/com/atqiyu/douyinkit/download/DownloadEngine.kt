@@ -50,7 +50,7 @@ class DownloadEngine(
             throw DownloadException(DownloadFailure.STORAGE, "无法创建临时下载目录")
         }
 
-        val progress = ProgressTracker(onProgress)
+        val progress = DownloadProgressTracker(onProgress)
         progress.start()
         try {
             when (request.kind) {
@@ -70,7 +70,7 @@ class DownloadEngine(
     private suspend fun downloadVideo(
         request: DownloadRequest,
         tempDir: File,
-        progress: ProgressTracker,
+        progress: DownloadProgressTracker,
     ): DownloadOutcome {
         currentCoroutineContext().ensureActive()
         val aweme = request.aweme
@@ -105,7 +105,7 @@ class DownloadEngine(
     private suspend fun downloadImages(
         request: DownloadRequest,
         tempDir: File,
-        progress: ProgressTracker,
+        progress: DownloadProgressTracker,
     ): DownloadOutcome {
         val aweme = request.aweme
         if (aweme.images.isEmpty()) {
@@ -269,7 +269,7 @@ class DownloadEngine(
     private suspend fun downloadMusicOnly(
         request: DownloadRequest,
         tempDir: File,
-        progress: ProgressTracker,
+        progress: DownloadProgressTracker,
     ): DownloadOutcome {
         val aweme = request.aweme
         progress.totalItems = 1
@@ -288,7 +288,7 @@ class DownloadEngine(
     private suspend fun downloadCover(
         request: DownloadRequest,
         tempDir: File,
-        progress: ProgressTracker,
+        progress: DownloadProgressTracker,
     ): DownloadOutcome {
         val aweme = request.aweme
         val url = aweme.primaryCoverUrl
@@ -402,11 +402,17 @@ class DownloadEngine(
         val disclaimer: String,
     )
 
-    private class ProgressTracker(
+    internal class DownloadProgressTracker(
         private val callback: (DownloadProgress) -> Unit,
+        private val now: () -> Long = { SystemClock.elapsedRealtime() },
     ) {
         var totalItems: Int = 0
         var totalBytes: Long? = null
+            set(value) {
+                field = value
+                    ?.takeIf { it > 0 }
+                    ?.let { maxOf(it, maxBytes) }
+            }
         private var doneItems: Int = 0
         private var baseBytes: Long = 0
         private var currentBytes: Long = 0
@@ -416,20 +422,20 @@ class DownloadEngine(
         private var lastEmitBytes: Long = 0
 
         fun start() {
-            startedAt = SystemClock.elapsedRealtime()
+            startedAt = now()
             lastEmitAt = startedAt
             emit(force = true)
         }
 
         fun updateBytes(bytes: Long, total: Long? = null) {
             currentBytes = bytes.coerceAtLeast(0)
-            if (total != null && total > 0) {
-                totalBytes = (baseBytes + total).coerceAtLeast(currentBytes)
-            }
             val aggregate = baseBytes + currentBytes
             if (aggregate > maxBytes) maxBytes = aggregate
-            val now = SystemClock.elapsedRealtime()
-            if (now - lastEmitAt >= 300 || aggregate - lastEmitBytes >= 512 * 1024) {
+            if (total != null && total > 0) {
+                totalBytes = baseBytes + total
+            }
+            val at = now()
+            if (at - lastEmitAt >= 300 || aggregate - lastEmitBytes >= 512 * 1024) {
                 emit()
             }
         }
@@ -442,16 +448,15 @@ class DownloadEngine(
         }
 
         private fun emit(force: Boolean = false) {
-            val now = SystemClock.elapsedRealtime()
-            if (!force && now - lastEmitAt < 200) return
-            lastEmitAt = now
-            lastEmitBytes = maxBytes + currentBytes
-            val elapsed = (now - startedAt).coerceAtLeast(1)
-            val bytes = maxBytes + currentBytes
-            val speed = bytes * 1000 / elapsed
+            val at = now()
+            if (!force && at - lastEmitAt < 200) return
+            lastEmitAt = at
+            lastEmitBytes = maxBytes
+            val elapsed = (at - startedAt).coerceAtLeast(1)
+            val speed = maxBytes * 1000 / elapsed
             callback(
                 DownloadProgress(
-                    bytes = bytes,
+                    bytes = maxBytes,
                     total = totalBytes,
                     itemsDone = doneItems,
                     itemsTotal = totalItems,
@@ -463,6 +468,8 @@ class DownloadEngine(
 }
 
 object VideoGearSelector {
+    const val HIGHEST_QUALITY = 0
+
     fun select(
         aweme: Aweme,
         preferH264: Boolean = true,
@@ -470,6 +477,18 @@ object VideoGearSelector {
     ): VideoGear? {
         val gears = aweme.video?.gears.orEmpty().filter { it.hasDownloadSource }
         if (gears.isEmpty()) return null
+
+        if (preferredHeight <= HIGHEST_QUALITY) {
+            val highestSide = gears.maxOfOrNull { it.shortSide ?: 0 } ?: 0
+            val highest = if (highestSide > 0) {
+                gears.filter { (it.shortSide ?: 0) == highestSide }
+            } else {
+                gears
+            }
+            val h264 = highest.filter { it.codec == VideoCodec.H264 }
+            val pool = if (preferH264 && h264.isNotEmpty()) h264 else highest
+            return pool.maxByOrNull { it.bitrateBps ?: 0 }
+        }
 
         gears.firstOrNull { it.name == "normal_${preferredHeight}_0" }?.let { return it }
 

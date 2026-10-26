@@ -34,20 +34,24 @@ fun InlineLoopingVideo(
     url: String,
     modifier: Modifier = Modifier,
     pause: Boolean = false,
+    muteAudio: Boolean = false,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentPause by rememberUpdatedState(pause)
 
-    val player = remember(url) {
+    val player = remember(url, muteAudio) {
         ExoPlayer.Builder(context).build().apply {
+            // A LivePhoto preview shares the page with the image-post BGM. Keep the
+            // BGM's audio focus and play the looping clip silently in that case.
             setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
                     .build(),
-                true,
+                !muteAudio,
             )
+            volume = if (muteAudio) 0f else 1f
             repeatMode = Player.REPEAT_MODE_ONE
             setMediaSource(
                 ProgressiveMediaSource.Factory(DefaultDataSource.Factory(context))

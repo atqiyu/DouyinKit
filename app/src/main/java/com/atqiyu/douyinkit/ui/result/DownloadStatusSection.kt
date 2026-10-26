@@ -254,7 +254,7 @@ private fun progressSummary(task: DownloadTask, fraction: Float?): String {
     val progress = task.progress
     if (fraction != null) {
         val percent = (fraction * 100).toInt()
-        return "$percent% · ${formatBytes(progress.bytes)} / ${formatBytes(progress.total)}"
+        return "$percent% · ${formatBytes(progress.displayBytes)} / ${formatBytes(progress.total)}"
     }
     val items = if (progress.itemsTotal > 1) {
         " ${progress.itemsDone}/${progress.itemsTotal}"

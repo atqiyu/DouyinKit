@@ -119,6 +119,7 @@ fun SettingsScreen() {
                 ChoiceRow(
                     title = "默认清晰度",
                     options = listOf(
+                        "最高清晰度" to com.atqiyu.douyinkit.download.VideoGearSelector.HIGHEST_QUALITY,
                         "4K" to 2160,
                         "1080P" to 1080,
                         "720P" to 720,

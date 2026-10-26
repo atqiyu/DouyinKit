@@ -8,7 +8,7 @@ DouyinKit 是单模块原生 Android App，核心约束是**无服务器、无�
 Compose UI
   ├─ Home / Clipboard
   ├─ ParseActivity (WebView)
-  ├─ Result / Preview / Downloads (grouped by work) / Library / Settings
+  ├─ Result / Preview / Downloads (grouped by work, sorted, collections) / Library / Settings
   └─ DownloadService (foreground)
         │
 Domain / data
@@ -48,6 +48,7 @@ DownloadRequest (Aweme + kind + gear + options)
       → 覆盖策略：新内容完整保存后按 replaceFiles 删除旧文件/旧记录
       → FileDownloader（Range 续传、镜像容错、magic/大小校验）
       → MediaStoreSaver（API 29+ IS_PENDING；API 24–28 公共目录 + MediaScanner）
+  → DownloadProgressTracker（字节/项目聚合、限频回调）
   → DownloadRegistry（内存进度）
   → Room download_history（状态、文件 URI、重试请求）
 ```
@@ -58,15 +59,20 @@ DownloadRequest (Aweme + kind + gear + options)
 - 下载 URL 经过 `UrlPolicy` 白名单，拒绝内网/IP/未知域名；OkHttp 最终重定向地址也会校验。
 - 重复检查在 UI 触发下载前执行：已有文件按媒体 key 汇总，提示用户跳过、覆盖或仍然重复下载。跳过会给图片请求写入 `skipMediaKeys`；覆盖把旧文件引用写入 `replaceFiles`，后台在新任务完整成功后清理，失败则保留旧文件。
 - 下载管理支持按作品/文件级删除。删除本地文件使用 MediaStore（旧系统回退到文件路径 + MediaScanner），只有文件删除成功才移除对应记录；也可只删记录保留文件。
+- `DownloadProgressTracker` 用 `baseBytes`（已完成项）+ `currentBytes`（当前项）聚合成单调递增的总字节数；`maxBytes` 保证不会因多次回调重复累计，`total` 至少等于已下载字节，避免 UI 出现“已下载大于总量”。UI 还通过 `DownloadProgress.displayBytes` 做最终上限保护。
+- 下载页把任务聚合为 `DownloadGroup` 后，在内存中按 DataStore 的排序模式排序；合集成员关系独立存储在 Room，筛选时按 `awemeId → collectionId` 映射过滤作品组。删除合集只清除成员关系。
 
 ## 数据
 
-Room：
+Room（版本 3）：
 - `awemes`：作品快照 JSON、标题/作者/封面、收藏、标签（逗号分隔）、解析时间
 - `download_history`：任务状态、请求 JSON、文件/zip URI、重试所需信息
+- `download_collections`：合集 ID、名称、创建时间、排序序号
+- `download_collection_members`：`awemeId` 主键、合集 ID、加入时间；一个作品最多属于一个合集
+- 2→3 迁移只新增两张表，不重建或清空已有表；`AppDatabase` 仍保留 destructive fallback 供更旧版本使用
 
 DataStore：
-- 默认清晰度、优先 H.264、LivePhoto/BGM/ZIP 默认项、剪贴板识别、下载页网格/列表、主题/动态色、历史保留天数、免责声明状态
+- 默认清晰度（0 = 最高清晰度）、优先 H.264、LivePhoto/BGM/ZIP 默认项、剪贴板识别、下载页网格/列表、下载页排序模式、主题/动态色、历史保留天数、免责声明状态
 
 下载请求扩展字段：
 - `skipMediaKeys`：跳过已存在的图片/动图/BGM/ZIP；
@@ -90,14 +96,17 @@ DataStore：
 | `HistoryRepository` / `DownloadHistoryRepository` | 本地历史 |
 | `SettingsRepository` | DataStore 设置 |
 | `DownloadGroups` / `DownloadGroup` | 下载任务按 aweme_id 聚合、作品封面、媒体元数据与组级进度 |
+| `DownloadSorting` | 六种排序模式、合集/未分类筛选 |
+| `DownloadCollectionRepository` / `DownloadCollectionDao` | 合集创建、重命名、删除、作品移动与成员关系 |
+| `DownloadCollections`（UI） | 合集筛选芯片、移动合集面板、管理/命名/删除合集对话框 |
 | `DownloadDuplicates` | 媒体 key、既有内容索引、重复匹配与跳过剩余判断 |
 | `DownloadFileCleaner` | MediaStore/旧路径文件删除、按 URI 清理下载记录 |
 | `DownloadCleanupDialog` | 作品/文件级删除选择、全选、是否删除本地文件 |
 | `WorkPartsSheet` | 下载卡片长按后的文件选择、文件详情与分析入口 |
 | `WorkPreviewDialog` | 作品级全屏预览：抖音式视频/图集/LivePhoto/BGM、作品与文件详情面板 |
-| `DouyinVideoPlayer` | 自定义交互的 Media3 播放器（单击暂停、平滑拖动进度、拖动高亮、信息隐藏） |
-| `InlineLoopingVideo` | 图片 Pager 内的 LivePhoto 循环播放（TextureView，可继续左右滑动） |
-| `AutoLoopingAudio` | 图文作品预览的无界面 BGM 循环播放器，随内容切换和生命周期暂停/恢复 |
+| `DouyinVideoPlayer` | 自定义交互的 Media3 播放器（单击暂停、平滑拖动进度、58dp 拖动热区、亮红发光高亮、信息隐藏） |
+| `InlineLoopingVideo` | 图片 Pager 内的 LivePhoto 循环播放（TextureView，可继续左右滑动；有 BGM 时静音且不抢音频焦点） |
+| `AutoLoopingAudio` | 图文作品预览的无界面 BGM 循环播放器，随内容切换和生命周期暂停/恢复；LivePhoto 播放期间保持 |
 | `ImageViewerDialog` / `AudioPreviewDialog` | 结果页/详情页图片缩放与音频试听 |
 
 ## 生命周期与线程

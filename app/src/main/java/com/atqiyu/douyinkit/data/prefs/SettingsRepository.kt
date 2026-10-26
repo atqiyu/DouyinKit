@@ -27,6 +27,7 @@ data class AppSettings(
     val dynamicColor: Boolean = false,
     val historyRetentionDays: Int = 90,
     val downloadsGridView: Boolean = true,
+    val downloadsSortMode: DownloadSortMode = DownloadSortMode.LATEST,
     val onboardingAccepted: Boolean = false,
 )
 
@@ -55,6 +56,11 @@ class SettingsRepository(private val context: Context) {
                 dynamicColor = prefs[KEY_DYNAMIC_COLOR] ?: false,
                 historyRetentionDays = prefs[KEY_RETENTION_DAYS] ?: 90,
                 downloadsGridView = prefs[KEY_DOWNLOADS_GRID] ?: true,
+                downloadsSortMode = runCatching {
+                    DownloadSortMode.valueOf(
+                        prefs[KEY_DOWNLOADS_SORT] ?: DownloadSortMode.LATEST.name,
+                    )
+                }.getOrDefault(DownloadSortMode.LATEST),
                 onboardingAccepted = prefs[KEY_ONBOARDING] ?: false,
             )
         }
@@ -99,6 +105,10 @@ class SettingsRepository(private val context: Context) {
         dataStore.edit { it[KEY_DOWNLOADS_GRID] = enabled }
     }
 
+    suspend fun setDownloadsSortMode(mode: DownloadSortMode) {
+        dataStore.edit { it[KEY_DOWNLOADS_SORT] = mode.name }
+    }
+
     suspend fun setOnboardingAccepted(accepted: Boolean) {
         dataStore.edit { it[KEY_ONBOARDING] = accepted }
     }
@@ -114,6 +124,7 @@ class SettingsRepository(private val context: Context) {
         val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val KEY_RETENTION_DAYS = intPreferencesKey("history_retention_days")
         val KEY_DOWNLOADS_GRID = booleanPreferencesKey("downloads_grid_view")
+        val KEY_DOWNLOADS_SORT = stringPreferencesKey("downloads_sort_mode")
         val KEY_ONBOARDING = booleanPreferencesKey("onboarding_accepted")
     }
 }

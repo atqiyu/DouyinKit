@@ -26,21 +26,29 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +69,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.atqiyu.douyinkit.core.model.AwemeKind
 import com.atqiyu.douyinkit.core.util.formatBytes
+import com.atqiyu.douyinkit.data.db.DownloadCollectionEntity
+import com.atqiyu.douyinkit.data.prefs.DownloadSortMode
 import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.download.DownloadRegistry
 import com.atqiyu.douyinkit.download.DownloadService
@@ -87,9 +97,38 @@ fun DownloadsScreen() {
     val groups = remember(tasks, historyTasks) {
         buildDownloadGroups(tasks + historyTasks)
     }
-    val activeTasks = groups.sumOf { it.activeTasks.size }
-    val totalFiles = groups.sumOf { it.fileCount }
-    val totalBytes = groups.sumOf { it.totalBytes }
+    val collectionRepository = context.appContainer.downloadCollectionRepository
+    val collections by collectionRepository.collections.collectAsStateWithLifecycle(emptyList())
+    val memberships by collectionRepository.memberships.collectAsStateWithLifecycle(emptyList())
+    val membershipByAweme = remember(memberships) {
+        memberships.associate { it.awemeId to it.collectionId }
+    }
+    val collectionById = remember(collections) { collections.associateBy { it.id } }
+    val collectionCounts = remember(groups, membershipByAweme) {
+        val counts = mutableMapOf<String, Int>()
+        groups.forEach { group ->
+            val id = membershipByAweme[group.awemeId] ?: return@forEach
+            counts[id] = (counts[id] ?: 0) + 1
+        }
+        counts
+    }
+    val uncategorizedCount = groups.count { it.awemeId !in membershipByAweme }
+
+    var collectionFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var sortModeOverride by remember { mutableStateOf<DownloadSortMode?>(null) }
+    val sortMode = sortModeOverride ?: loadedSettings?.downloadsSortMode ?: DownloadSortMode.LATEST
+    val sortedGroups = remember(groups, sortMode) { sortDownloadGroups(groups, sortMode) }
+    val visibleGroups = remember(sortedGroups, collectionFilter, membershipByAweme) {
+        filterDownloadGroups(sortedGroups, collectionFilter, membershipByAweme)
+    }
+    val activeTasks = visibleGroups.sumOf { it.activeTasks.size }
+    val totalFiles = visibleGroups.sumOf { it.fileCount }
+    val totalBytes = visibleGroups.sumOf { it.totalBytes }
+    val filterLabel = when (collectionFilter) {
+        null -> null
+        UNCATEGORIZED_COLLECTION -> "未分类"
+        else -> collectionById[collectionFilter]?.name
+    }
 
     var gridModeOverride by rememberSaveable { mutableStateOf<Boolean?>(null) }
     val gridMode = gridModeOverride ?: loadedSettings?.downloadsGridView ?: true
@@ -99,7 +138,41 @@ fun DownloadsScreen() {
     var partsGroup by remember { mutableStateOf<DownloadGroup?>(null) }
     var partsSelectionUri by remember { mutableStateOf<String?>(null) }
     var partDetails by remember { mutableStateOf<GroupMediaItem?>(null) }
+    var sortMenuOpen by remember { mutableStateOf(false) }
+    var collectionMenuOpen by remember { mutableStateOf(false) }
+    var showCreateCollection by remember { mutableStateOf(false) }
+    var createForAwemeId by remember { mutableStateOf<String?>(null) }
+    var showManageCollections by remember { mutableStateOf(false) }
+    var moveGroup by remember { mutableStateOf<DownloadGroup?>(null) }
+    var renameTarget by remember { mutableStateOf<DownloadCollectionEntity?>(null) }
+    var deleteTarget by remember { mutableStateOf<DownloadCollectionEntity?>(null) }
     val previewGroup = groups.firstOrNull { it.awemeId == previewAwemeId }
+
+    fun showToast(message: String) {
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
+    fun moveWorkToCollection(group: DownloadGroup, collectionId: String?) {
+        scope.launch {
+            runCatching { collectionRepository.move(group.awemeId, collectionId) }
+                .onSuccess {
+                    moveGroup = null
+                    showToast(
+                        collectionId?.let { id ->
+                            "已移动到「${collectionById[id]?.name ?: "合集"}」"
+                        } ?: "已移出合集",
+                    )
+                }
+                .onFailure { showToast("移动失败：${it.message ?: "未知错误"}") }
+        }
+    }
+
+    LaunchedEffect(collections, collectionFilter) {
+        val filter = collectionFilter ?: return@LaunchedEffect
+        if (filter != UNCATEGORIZED_COLLECTION && collections.none { it.id == filter }) {
+            collectionFilter = null
+        }
+    }
 
     fun removeGroup(group: DownloadGroup) {
         group.tasks.forEach { task ->
@@ -127,65 +200,163 @@ fun DownloadsScreen() {
             key = "header",
             span = { GridItemSpan(maxLineSpan) },
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
                         text = "下载",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
                     )
-                    Text(
-                        text = when {
-                            activeTasks > 0 ->
-                                "$activeTasks 个任务进行中 · ${groups.size} 个作品"
-
-                            groups.isEmpty() -> "下载完成后会出现在系统相册"
-                            else -> buildString {
-                                append("${groups.size} 个作品 · $totalFiles 个文件")
-                                if (totalBytes > 0) append(" · ${formatBytes(totalBytes)}")
+                    Box {
+                        IconButton(onClick = { sortMenuOpen = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Sort,
+                                contentDescription = "选择排序方式",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = sortMenuOpen,
+                            onDismissRequest = { sortMenuOpen = false },
+                        ) {
+                            DownloadSortMode.entries.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text(mode.label) },
+                                    trailingIcon = {
+                                        if (sortMode == mode) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = BrandPink,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        sortMenuOpen = false
+                                        sortModeOverride = mode
+                                        scope.launch {
+                                            settingsRepository.setDownloadsSortMode(mode)
+                                        }
+                                    },
+                                )
                             }
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = CircleShape,
-                ) {
-                    Row(modifier = Modifier.padding(2.dp)) {
-                        ViewModeButton(
-                            selected = gridMode,
-                            icon = Icons.Default.GridView,
-                            label = "网格视图",
-                            onClick = {
-                                gridModeOverride = true
-                                scope.launch { settingsRepository.setDownloadsGridView(true) }
-                            },
-                        )
-                        ViewModeButton(
-                            selected = !gridMode,
-                            icon = Icons.AutoMirrored.Filled.ViewList,
-                            label = "列表视图",
-                            onClick = {
-                                gridModeOverride = false
-                                scope.launch { settingsRepository.setDownloadsGridView(false) }
-                            },
-                        )
+                        }
+                    }
+                    Box {
+                        IconButton(onClick = { collectionMenuOpen = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = "合集",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = collectionMenuOpen,
+                            onDismissRequest = { collectionMenuOpen = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("新建合集") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(19.dp),
+                                    )
+                                },
+                                onClick = {
+                                    collectionMenuOpen = false
+                                    createForAwemeId = null
+                                    showCreateCollection = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("管理合集（${collections.size}）") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Folder,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(19.dp),
+                                    )
+                                },
+                                onClick = {
+                                    collectionMenuOpen = false
+                                    showManageCollections = true
+                                },
+                            )
+                        }
+                    }
+                    if (groups.any { it.cleanupUnits().isNotEmpty() }) {
+                        IconButton(onClick = { cleanupOpen = true }) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteSweep,
+                                contentDescription = "管理下载记录",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = CircleShape,
+                    ) {
+                        Row(modifier = Modifier.padding(2.dp)) {
+                            ViewModeButton(
+                                selected = gridMode,
+                                icon = Icons.Default.GridView,
+                                label = "网格视图",
+                                onClick = {
+                                    gridModeOverride = true
+                                    scope.launch { settingsRepository.setDownloadsGridView(true) }
+                                },
+                            )
+                            ViewModeButton(
+                                selected = !gridMode,
+                                icon = Icons.AutoMirrored.Filled.ViewList,
+                                label = "列表视图",
+                                onClick = {
+                                    gridModeOverride = false
+                                    scope.launch { settingsRepository.setDownloadsGridView(false) }
+                                },
+                            )
+                        }
                     }
                 }
-                if (groups.any { it.cleanupUnits().isNotEmpty() }) {
-                    IconButton(onClick = { cleanupOpen = true }) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteSweep,
-                            contentDescription = "管理下载记录",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                Text(
+                    text = when {
+                        groups.isEmpty() -> "下载完成后会出现在系统相册"
+                        activeTasks > 0 ->
+                            "$activeTasks 个任务进行中 · ${visibleGroups.size} 个作品"
+
+                        filterLabel != null -> buildString {
+                            append("$filterLabel · ${visibleGroups.size} 个作品 · $totalFiles 个文件")
+                            if (totalBytes > 0) append(" · ${formatBytes(totalBytes)}")
+                        }
+
+                        else -> buildString {
+                            append("${visibleGroups.size} 个作品 · $totalFiles 个文件")
+                            if (totalBytes > 0) append(" · ${formatBytes(totalBytes)}")
+                        }
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                CollectionFilterRow(
+                    totalCount = groups.size,
+                    uncategorizedCount = uncategorizedCount,
+                    collections = collections,
+                    selected = collectionFilter,
+                    onSelect = { collectionFilter = it },
+                    onCreate = {
+                        createForAwemeId = null
+                        showCreateCollection = true
+                    },
+                )
             }
         }
 
@@ -196,15 +367,29 @@ fun DownloadsScreen() {
             ) {
                 EmptyDownloads()
             }
+        } else if (visibleGroups.isEmpty()) {
+            item(
+                key = "empty_collection",
+                span = { GridItemSpan(maxLineSpan) },
+            ) {
+                EmptyCollection(
+                    label = filterLabel ?: "这个合集",
+                    onShowAll = { collectionFilter = null },
+                )
+            }
         } else {
             items(
-                items = groups,
+                items = visibleGroups,
                 key = { it.awemeId },
                 contentType = { if (gridMode) "download-grid" else "download-list" },
             ) { group ->
+                val collectionName = membershipByAweme[group.awemeId]
+                    ?.let(collectionById::get)
+                    ?.name
                 if (gridMode) {
                     DownloadGridCard(
                         group = group,
+                        collectionName = collectionName,
                         onClick = {
                             previewInitialUri = null
                             previewAwemeId = group.awemeId
@@ -217,6 +402,7 @@ fun DownloadsScreen() {
                 } else {
                     DownloadListCard(
                         group = group,
+                        collectionName = collectionName,
                         onClick = {
                             previewInitialUri = null
                             previewAwemeId = group.awemeId
@@ -247,6 +433,9 @@ fun DownloadsScreen() {
         WorkPartsSheet(
             group = group,
             selectedUri = partsSelectionUri,
+            currentCollectionName = membershipByAweme[group.awemeId]
+                ?.let(collectionById::get)
+                ?.name,
             onSelect = { partsSelectionUri = it.file.uri.toString() },
             onDismiss = { partsGroup = null },
             onDetails = {
@@ -260,6 +449,10 @@ fun DownloadsScreen() {
             },
             onOpen = {
                 openSavedFile(context, it.file)
+                partsGroup = null
+            },
+            onMoveToCollection = {
+                moveGroup = group
                 partsGroup = null
             },
         )
@@ -301,6 +494,127 @@ fun DownloadsScreen() {
             },
         )
     }
+
+    if (showManageCollections) {
+        ManageCollectionsDialog(
+            collections = collections,
+            counts = collectionCounts,
+            onDismiss = { showManageCollections = false },
+            onCreate = {
+                showManageCollections = false
+                createForAwemeId = null
+                showCreateCollection = true
+            },
+            onRename = { renameTarget = it },
+            onDelete = { deleteTarget = it },
+        )
+    }
+
+    if (showCreateCollection) {
+        CollectionNameDialog(
+            title = if (createForAwemeId != null) "新建合集并移动" else "新建合集",
+            initialName = "",
+            confirmLabel = "创建",
+            onDismiss = {
+                showCreateCollection = false
+                createForAwemeId = null
+            },
+            onConfirm = { name ->
+                val cleanName = name.trim()
+                if (collections.any { it.name.equals(cleanName, ignoreCase = true) }) {
+                    showToast("已有同名合集")
+                } else {
+                    val moveTarget = createForAwemeId
+                    scope.launch {
+                        runCatching { collectionRepository.create(cleanName) }
+                            .onSuccess { created ->
+                                if (moveTarget != null) {
+                                    runCatching {
+                                        collectionRepository.move(moveTarget, created.id)
+                                    }.onSuccess {
+                                        showToast("已创建「${created.name}」并移动作品")
+                                    }.onFailure {
+                                        showToast("合集已创建，但移动作品失败")
+                                    }
+                                } else {
+                                    showToast("已创建合集「${created.name}」")
+                                }
+                                collectionFilter = created.id
+                                createForAwemeId = null
+                                showCreateCollection = false
+                            }
+                            .onFailure { showToast("创建合集失败：${it.message ?: "未知错误"}") }
+                    }
+                }
+            },
+        )
+    }
+
+    renameTarget?.let { target ->
+        CollectionNameDialog(
+            title = "重命名合集",
+            initialName = target.name,
+            confirmLabel = "保存",
+            onDismiss = { renameTarget = null },
+            onConfirm = { name ->
+                val cleanName = name.trim()
+                if (collections.any {
+                        it.id != target.id && it.name.equals(cleanName, ignoreCase = true)
+                    }
+                ) {
+                    showToast("已有同名合集")
+                } else {
+                    scope.launch {
+                        runCatching { collectionRepository.rename(target.id, cleanName) }
+                            .onSuccess {
+                                renameTarget = null
+                                showToast("合集已重命名")
+                            }
+                            .onFailure {
+                                showToast("重命名失败：${it.message ?: "未知错误"}")
+                            }
+                    }
+                }
+            },
+        )
+    }
+
+    deleteTarget?.let { target ->
+        DeleteCollectionDialog(
+            collection = target,
+            workCount = collectionCounts[target.id] ?: 0,
+            onDismiss = { deleteTarget = null },
+            onConfirm = {
+                scope.launch {
+                    runCatching { collectionRepository.delete(target.id) }
+                        .onSuccess {
+                            if (collectionFilter == target.id) collectionFilter = null
+                            deleteTarget = null
+                            showToast("已删除合集「${target.name}」")
+                        }
+                        .onFailure {
+                            showToast("删除合集失败：${it.message ?: "未知错误"}")
+                        }
+                }
+            },
+        )
+    }
+
+    moveGroup?.let { group ->
+        MoveToCollectionSheet(
+            workTitle = group.title,
+            collections = collections,
+            counts = collectionCounts,
+            currentCollectionId = membershipByAweme[group.awemeId],
+            onDismiss = { moveGroup = null },
+            onSelect = { collectionId -> moveWorkToCollection(group, collectionId) },
+            onCreateNew = {
+                moveGroup = null
+                createForAwemeId = group.awemeId
+                showCreateCollection = true
+            },
+        )
+    }
 }
 
 @Composable
@@ -336,6 +650,7 @@ private fun ViewModeButton(
 @Composable
 private fun DownloadGridCard(
     group: DownloadGroup,
+    collectionName: String?,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -439,6 +754,26 @@ private fun DownloadGridCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (collectionName != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Folder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(12.dp),
+                        )
+                        Text(
+                            text = collectionName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
                 Text(
                     text = if (group.isActive) {
                         group.statusLine
@@ -459,6 +794,7 @@ private fun DownloadGridCard(
 @Composable
 private fun DownloadListCard(
     group: DownloadGroup,
+    collectionName: String?,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -540,6 +876,26 @@ private fun DownloadListCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (collectionName != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Folder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(12.dp),
+                        )
+                        Text(
+                            text = collectionName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
                 val fraction = group.progressFraction
                 if (group.isActive && fraction != null) {
                     LinearProgressIndicator(
@@ -687,6 +1043,48 @@ private fun EmptyDownloads() {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun EmptyCollection(
+    label: String,
+    onShowAll: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 40.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Folder,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(42.dp),
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "$label 还没有作品",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "长按任意作品卡片，选择“移动到合集”，即可把作品分类到这里。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onShowAll) {
+                Text("查看全部作品")
+            }
         }
     }
 }
