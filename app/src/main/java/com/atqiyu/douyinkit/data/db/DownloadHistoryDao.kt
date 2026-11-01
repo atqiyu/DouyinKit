@@ -27,6 +27,9 @@ interface DownloadHistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: DownloadHistoryEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<DownloadHistoryEntity>)
+
     @Query("DELETE FROM download_history WHERE taskId = :taskId")
     suspend fun delete(taskId: String)
 

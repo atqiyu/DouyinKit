@@ -12,7 +12,7 @@ Use:
 
 Do **not** ship or performance-test the debug APK. Compose/Room in debug mode made the old
 list scrolling 90th-percentile frames 69–93 ms; the R8 release build measures about
-11–12 ms. The release APK is also about 3.39 MB instead of about 26 MB.
+11–12 ms. The release APK is also about 3.44 MB instead of about 26 MB.
 
 The release build is signed with the standard Android debug keystore on purpose so personal
 sideload installs can update previous versions. Never commit a keystore or password.

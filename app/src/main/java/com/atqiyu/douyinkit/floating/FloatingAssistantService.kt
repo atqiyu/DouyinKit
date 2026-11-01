@@ -68,11 +68,6 @@ class FloatingAssistantService : Service() {
         startForegroundCompat(buildNotification("Kit 浮球运行中", "等待抖音作品链接"))
         FloatingAssistantBus.setEnabled(true)
         FloatingAssistantBus.setOverlayReady(FloatingPermissions.canDrawOverlays(this))
-        runCatching {
-            DouyinAccessibilityService.instance?.rootInActiveWindow?.packageName
-                ?.toString()
-                ?.let(FloatingAssistantBus::setForeground)
-        }
         if (!FloatingPermissions.canDrawOverlays(this)) {
             FloatingAssistantBus.update {
                 it.copy(
@@ -89,7 +84,6 @@ class FloatingAssistantService : Service() {
             onOpenInput = { prefill -> overlay?.showInput(prefill) },
             onOpenApp = ::openApp,
             onExpandedChanged = { expanded ->
-                if (expanded) refreshForeground()
                 FloatingAssistantBus.setExpanded(expanded)
             },
             onStop = ::stopCurrent,
@@ -114,6 +108,17 @@ class FloatingAssistantService : Service() {
             applicationContext.appContainer.settingsRepository.settings.collect { settings ->
                 FloatingAssistantBus.setMode(settings.floatingMode)
                 FloatingAssistantBus.setAutoDownload(settings.floatingAutoDownload)
+                FloatingAssistantBus.update {
+                    it.copy(
+                        orbSizeDp = settings.floatingOrbSizeDp,
+                        orbAlpha = settings.floatingOrbAlpha,
+                        panelOpacity = settings.floatingPanelOpacity,
+                        panelStyle = settings.floatingPanelStyle,
+                        panelColorArgb = settings.floatingPanelColor.argb,
+                        panelBlur = settings.floatingPanelBlur,
+                        showClipboard = settings.floatingShowClipboard,
+                    )
+                }
             }
         }
 
@@ -167,7 +172,6 @@ class FloatingAssistantService : Service() {
     }
 
     private fun handlePrimaryAction() {
-        refreshForeground()
         val state = FloatingAssistantBus.state.value
         when {
             state.needsVerification || state.needsLogin -> {
@@ -241,7 +245,6 @@ class FloatingAssistantService : Service() {
 
     private fun triggerSuperAction() {
         if (automationJob?.isActive == true) return
-        refreshForeground()
         val state = FloatingAssistantBus.state.value
         if (state.mode != FloatingMode.AUTO) return
         if (!state.accessibilityReady) {
@@ -323,22 +326,6 @@ class FloatingAssistantService : Service() {
         }
         val focusedText = focusReader.read()
         return focusedText?.let { LinkExtractor.extract(it).firstOrNull()?.url }
-    }
-
-    private fun refreshForeground() {
-        if (FloatingAssistantBus.state.value.appForeground) {
-            FloatingAssistantBus.setForeground(packageName)
-            return
-        }
-        val rootPackage = runCatching {
-            DouyinAccessibilityService.instance?.rootInActiveWindow?.packageName?.toString()
-        }.getOrNull()
-        if (!rootPackage.isNullOrBlank() && rootPackage != packageName) {
-            Log.d(TAG, "foreground root=$rootPackage")
-            FloatingAssistantBus.setForeground(rootPackage)
-        } else {
-            Log.d(TAG, "foreground root unavailable")
-        }
     }
 
     private fun onClipboardChanged() {

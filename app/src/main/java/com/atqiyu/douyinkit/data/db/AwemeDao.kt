@@ -23,6 +23,12 @@ interface AwemeDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: AwemeEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<AwemeEntity>)
+
+    @Query("SELECT * FROM awemes ORDER BY parsedAt DESC")
+    suspend fun getAll(): List<AwemeEntity>
+
     @Query("UPDATE awemes SET isFavorite = :favorite WHERE awemeId = :awemeId")
     suspend fun setFavorite(awemeId: String, favorite: Boolean)
 

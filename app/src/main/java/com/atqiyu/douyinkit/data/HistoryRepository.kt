@@ -42,6 +42,12 @@ class HistoryRepository(
         )
     }
 
+    suspend fun allEntities(): List<AwemeEntity> = dao.getAll()
+
+    suspend fun importEntities(entities: List<AwemeEntity>) {
+        if (entities.isNotEmpty()) dao.upsertAll(entities)
+    }
+
     suspend fun saveAll(awemes: List<Aweme>) {
         awemes.forEach { save(it) }
     }

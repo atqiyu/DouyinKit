@@ -3,9 +3,9 @@
 已发布版本：
 
 - 仓库：<https://github.com/atqiyu/DouyinKit>
-- 最新 Release：<https://github.com/atqiyu/DouyinKit/releases/tag/v1.5.0>
-- 最新 APK：`DouyinKit-v1.5.0.apk`（3,388,943 字节，R8 优化构建）
-- 最新资产 SHA-256：`13cd4e7443cc31211eafd2d48056368ad7e77c5c3ac0763c90d22a55198ac959`
+- 最新 Release：<https://github.com/atqiyu/DouyinKit/releases/tag/v1.5.1>
+- 最新 APK：`DouyinKit-v1.5.1.apk`（3,441,363 字节，R8 优化构建）
+- 最新资产 SHA-256：`1defbed172ca5f118741524bf51bcc50e2dc28c412e1f0c53c9875ed0a918b67`
 - 首个 Release：<https://github.com/atqiyu/DouyinKit/releases/tag/v1.2.0>
 - 可见性：Public；默认分支：`main`；许可证：MIT
 - 已设置仓库描述和 9 个 Topics
@@ -13,9 +13,9 @@
 ## 当前本地状态
 
 - 分支：`main`
-- 当前版本：`v1.5.0`
-- Release 说明：[RELEASE_NOTES_v1.5.0.md](../RELEASE_NOTES_v1.5.0.md)
-- APK 产物：`dist/DouyinKit-v1.5.0.apk`（已在 `.gitignore` 中忽略，不会提交进源码）
+- 当前版本：`v1.5.1`
+- Release 说明：[RELEASE_NOTES_v1.5.1.md](../RELEASE_NOTES_v1.5.1.md)
+- APK 产物：`dist/DouyinKit-v1.5.1.apk`（已在 `.gitignore` 中忽略，不会提交进源码）
 - 签名：release 构建使用标准 debug keystore，便于从 1.3.0 覆盖升级；公开分发前应换成私有 release keystore
 - 许可证：[MIT](../LICENSE)
 
@@ -49,16 +49,16 @@ git push origin main
 
 # 3. 复制 APK 到 dist，计算校验和
 mkdir -p dist
-cp app/build/outputs/apk/release/app-release.apk dist/DouyinKit-v1.5.0.apk
-sha256sum dist/DouyinKit-v1.5.0.apk
-# 把大小和 SHA-256 写入 RELEASE_NOTES_v1.5.0.md
+cp app/build/outputs/apk/release/app-release.apk dist/DouyinKit-v1.5.1.apk
+sha256sum dist/DouyinKit-v1.5.1.apk
+# 把大小和 SHA-256 写入 RELEASE_NOTES_v1.5.1.md
 
 # 4. 打标签、推送并发布 Release
-git tag v1.5.0
-git push origin v1.5.0
-gh release create v1.5.0 "dist/DouyinKit-v1.5.0.apk" \
-  --title "DouyinKit v1.5.0" \
-  --notes-file RELEASE_NOTES_v1.5.0.md
+git tag v1.5.1
+git push origin v1.5.1
+gh release create v1.5.1 "dist/DouyinKit-v1.5.1.apk" \
+  --title "DouyinKit v1.5.1" \
+  --notes-file RELEASE_NOTES_v1.5.1.md
 ```
 
 如果从零重建仓库（仅作参考，当前仓库已完成）：
@@ -82,14 +82,14 @@ gh repo edit atqiyu/DouyinKit \
 ```bash
 git remote add origin https://github.com/atqiyu/DouyinKit.git
 git push -u origin main
-git push origin v1.5.0
+git push origin v1.5.1
 ```
 
 首次 push 如果自动弹出 Git Credential Manager，登录并授权即可。
 
-5. 进入仓库 **Releases → Draft a new release**，选择标签 `v1.5.0`。
-6. 标题填 `DouyinKit v1.5.0`，描述粘贴 `RELEASE_NOTES_v1.5.0.md` 的内容。
-7. 上传 `dist/DouyinKit-v1.5.0.apk`，点击 Publish release。
+5. 进入仓库 **Releases → Draft a new release**，选择标签 `v1.5.1`。
+6. 标题填 `DouyinKit v1.5.1`，描述粘贴 `RELEASE_NOTES_v1.5.1.md` 的内容。
+7. 上传 `dist/DouyinKit-v1.5.1.apk`，点击 Publish release。
 
 ## 发布包说明
 
@@ -104,6 +104,6 @@ git push origin v1.5.0
 
 - 仓库 About 区域显示描述、Topics 和 MIT License
 - `main` 上有完整提交历史
-- `v1.5.0` 标签存在，且指向包含发布说明的提交
-- Releases 页面有 v1.5.0 和 APK 资产，资产大小/SHA-256 与发布说明一致
+- `v1.5.1` 标签存在，且指向包含发布说明的提交
+- Releases 页面有 v1.5.1 和 APK 资产，资产大小/SHA-256 与发布说明一致
 - App 的“设置 → 关于”中的版本、GitHub 仓库与许可证链接可打开

@@ -1,12 +1,18 @@
 package com.atqiyu.douyinkit.ui.settings
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.WarningAmber
@@ -24,6 +31,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,6 +45,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -47,7 +57,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
+import com.atqiyu.douyinkit.data.prefs.AppSettings
 import com.atqiyu.douyinkit.data.prefs.FloatingMode
+import com.atqiyu.douyinkit.data.prefs.FloatingPanelColor
+import com.atqiyu.douyinkit.data.prefs.FloatingPanelStyle
 import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.floating.FloatingAssistantBus
 import com.atqiyu.douyinkit.floating.FloatingAssistantScheduler
@@ -84,7 +97,8 @@ fun FloatingBallSettings() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val enabled = settings?.floatingBallEnabled == true
+    val current = settings ?: AppSettings()
+    val enabled = current.floatingBallEnabled
     LaunchedEffect(
         enabled,
         permissions.overlay,
@@ -225,6 +239,166 @@ fun FloatingBallSettings() {
                     color = MaterialTheme.colorScheme.outlineVariant,
                     modifier = Modifier.padding(vertical = 8.dp),
                 )
+                Text(
+                    text = "浮球外观",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FloatingSliderRow(
+                    title = "浮球大小",
+                    valueText = "${current.floatingOrbSizeDp} dp",
+                    value = current.floatingOrbSizeDp.toFloat(),
+                    valueRange = 38f..72f,
+                    steps = 8,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository.setFloatingOrbSize(value.toInt())
+                        }
+                    },
+                )
+                FloatingSliderRow(
+                    title = "浮球透明度",
+                    valueText = "${(current.floatingOrbAlpha * 100).toInt()}%",
+                    value = current.floatingOrbAlpha,
+                    valueRange = 0.35f..1f,
+                    steps = 8,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository.setFloatingOrbAlpha(value)
+                        }
+                    },
+                )
+                Text(
+                    text = "浮窗背景",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        FloatingPanelStyle.GLASS to "毛玻璃",
+                        FloatingPanelStyle.CLEAR to "半透明",
+                        FloatingPanelStyle.SOLID to "纯色",
+                    ).forEach { (style, label) ->
+                        FilterChip(
+                            selected = current.floatingPanelStyle == style,
+                            onClick = {
+                                scope.launch {
+                                    context.appContainer.settingsRepository
+                                        .setFloatingPanelStyle(style)
+                                }
+                            },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+                FloatingSliderRow(
+                    title = "浮窗不透明度",
+                    valueText = "${(current.floatingPanelOpacity * 100).toInt()}%",
+                    value = current.floatingPanelOpacity,
+                    valueRange = 0.2f..1f,
+                    steps = 8,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository.setFloatingPanelOpacity(value)
+                        }
+                    },
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("背景色调", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            "下载进度也会显示在浮球外圈",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FloatingPanelColor.entries.forEach { color ->
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(color.argb))
+                                    .border(
+                                        width = if (current.floatingPanelColor == color) {
+                                            2.dp
+                                        } else {
+                                            1.dp
+                                        },
+                                        color = if (current.floatingPanelColor == color) {
+                                            BrandPink
+                                        } else {
+                                            MaterialTheme.colorScheme.outlineVariant
+                                        },
+                                        shape = CircleShape,
+                                    )
+                                    .clickable {
+                                        scope.launch {
+                                            context.appContainer.settingsRepository
+                                                .setFloatingPanelColor(color)
+                                        }
+                                    },
+                            )
+                        }
+                    }
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val blurSupported = remember {
+                        context.getSystemService(WindowManager::class.java)
+                            .isCrossWindowBlurEnabled
+                    }
+                    FloatingSliderRow(
+                        title = "毛玻璃模糊",
+                        valueText = if (blurSupported) {
+                            if (current.floatingPanelStyle == FloatingPanelStyle.GLASS) {
+                                "${current.floatingPanelBlur}"
+                            } else {
+                                "仅毛玻璃模式"
+                            }
+                        } else {
+                            "系统未启用跨窗口模糊"
+                        },
+                        value = current.floatingPanelBlur.toFloat(),
+                        valueRange = 0f..25f,
+                        steps = 8,
+                        enabled = blurSupported &&
+                            current.floatingPanelStyle == FloatingPanelStyle.GLASS,
+                        onValueChange = { value ->
+                            scope.launch {
+                                context.appContainer.settingsRepository
+                                    .setFloatingPanelBlur(value.toInt())
+                            }
+                        },
+                    )
+                } else {
+                    Text(
+                        "毛玻璃模糊需要 Android 12 及以上；旧系统自动使用半透明背景。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 3.dp),
+                    )
+                }
+                FloatingSwitchRow(
+                    title = "浮窗显示剪贴板内容",
+                    subtitle = "关闭后只保留解析状态、进度和队列提示",
+                    checked = current.floatingShowClipboard,
+                    onCheckedChange = { checked ->
+                        scope.launch {
+                            context.appContainer.settingsRepository
+                                .setFloatingShowClipboard(checked)
+                        }
+                    },
+                )
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
                 FloatingSwitchRow(
                     title = "连播自动下载",
                     subtitle = "沿用下载默认值：视频默认清晰度；图集按 LivePhoto/BGM/ZIP 开关；不含封面",
@@ -313,7 +487,45 @@ private fun readFloatingPermissions(context: android.content.Context): FloatingP
     )
 
 @Composable
+private fun FloatingSliderRow(
+    title: String,
+    valueText: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    enabled: Boolean = true,
+    onValueChange: (Float) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 2.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = valueText,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Slider(
+            value = value.coerceIn(valueRange.start, valueRange.endInclusive),
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            steps = steps,
+            enabled = enabled,
+        )
+    }
+}
+
+@Composable
 private fun FloatingSwitchRow(
+
     title: String,
     subtitle: String,
     checked: Boolean,

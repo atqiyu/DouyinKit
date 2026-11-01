@@ -136,12 +136,16 @@ DataStore：
 
 浮球是可选的前台辅助进程，入口在设置中；它不改变主解析链路，只在用户开启后增加：
 
-- `FloatingAssistantService`：`specialUse` 前台服务，持有悬浮球/面板/输入框窗口、剪贴板监听、
-  `FloatingParseQueue` 和常驻通知；`SYSTEM_ALERT_WINDOW` 使其能在其他应用上层显示。
+- `FloatingAssistantService`：`specialUse` 前台服务，持有悬浮球、环绕操作窗口、独立信息浮窗、
+  输入框、剪贴板监听、`FloatingParseQueue` 和常驻通知；`SYSTEM_ALERT_WINDOW` 使其能在其他应用上层显示。
+  操作按钮是独立的小窗口，以便从浮球弹出并跟随拖动；信息浮窗先于浮球加入 WindowManager，
+  避免毛玻璃窗口遮住浮球和按钮。
 - `DouyinAccessibilityService`：用户手动开启的无障碍服务；只读取抖音/抖音极速版窗口，维护前台状态，
   在连播模式中点击“分享 → 分享链接”。不处理验证码，不导出页面内容。
 - `ClipboardFocusReader`：Android 10+ 后台剪贴板限制的补救。分享复制后短暂创建 1×1 可聚焦悬浮窗，
   读取剪贴板后立即移除，把焦点还给抖音。
+- 浮球状态点只表示前台应用（抖音/极速版绿色，其他灰色）；模式用图标底部“轻/连”徽标表示；
+  浮球外圈 `OrbProgressRing` 显示解析扫描或下载进度。
 - `FloatingParseQueue`：复用 `DouyinWebViewEngine` + `ParseController`，WebView 挂在 1×1 隐藏窗口；
   一次只解析一个作品，解析后按默认值自动下载并等待 `DownloadRegistry` 终止，再处理队列下一项。
 - 安全验证/登录：验证状态把同一个 WebView 扩展为全屏页面；登录只提示手动打开。
@@ -149,6 +153,9 @@ DataStore：
   `BootCompletedReceiver` 在开机/更新后重新注册；OEM 可能仍阻止后台启动，设置提供电池优化入口。
 - `MainActivity` 启动/恢复时检查 `floatingBallEnabled` 并恢复服务；应用更新后部分系统会关闭无障碍，
   设置卡片会显示未授权并提供入口。
+- 设置页按分类页签组织；新增 `ConfigBackup`（JSON 配置，包含 schema/app 版本/全部设置）和
+  `HistoryBackup`（ZIP + `manifest.json` + `awemes.jsonl` + `downloads.jsonl`，流式导出/分批导入，
+  带进度和错误/跳过统计）。记录包含作品信息和本地文件 URI/路径，不包含媒体文件本身。
 
 浮球的自动下载使用 `buildFloatingDownloadRequest`：视频按默认清晰度/优先 H.264，图文按
 LivePhoto/BGM/ZIP 默认开关，不自动下载封面；入队前复用 `DownloadDuplicates`，重复内容自动跳过。

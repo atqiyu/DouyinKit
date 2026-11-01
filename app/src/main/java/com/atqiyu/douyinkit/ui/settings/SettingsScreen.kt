@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,6 +94,11 @@ fun SettingsScreen() {
             }
         }.getOrNull() ?: "未知"
     }
+    var categoryName by rememberSaveable { mutableStateOf(SettingsCategory.DOWNLOAD.name) }
+    val category = runCatching { SettingsCategory.valueOf(categoryName) }
+        .getOrDefault(SettingsCategory.DOWNLOAD)
+    fun show(target: SettingsCategory): Boolean =
+        category == SettingsCategory.ALL || category == target
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -114,6 +120,17 @@ fun SettingsScreen() {
             }
         }
 
+        item {
+            SettingsCategoryChips(
+                selected = category,
+                onSelect = { categoryName = it.name },
+            )
+        }
+
+        if (show(SettingsCategory.DOWNLOAD)) {
+            if (category == SettingsCategory.ALL) {
+                item { SettingsSectionTitle("下载与解析") }
+            }
         item {
             SettingsCard(title = "下载默认值") {
                 ChoiceRow(
@@ -169,6 +186,12 @@ fun SettingsScreen() {
             }
         }
 
+        }
+
+        if (show(SettingsCategory.APPEARANCE)) {
+            if (category == SettingsCategory.ALL) {
+                item { SettingsSectionTitle("外观") }
+            }
         item {
             SettingsCard(title = "外观") {
                 ChoiceRow(
@@ -201,6 +224,12 @@ fun SettingsScreen() {
             }
         }
 
+        }
+
+        if (show(SettingsCategory.PRIVACY)) {
+            if (category == SettingsCategory.ALL) {
+                item { SettingsSectionTitle("识别与隐私") }
+            }
         item {
             SettingsCard(title = "识别") {
                 SettingSwitch(
@@ -214,10 +243,19 @@ fun SettingsScreen() {
             }
         }
 
+        }
+
+        if (show(SettingsCategory.FLOATING)) {
+            if (category == SettingsCategory.ALL) {
+                item { SettingsSectionTitle("Kit 浮球") }
+            }
         item {
             FloatingBallSettings()
         }
 
+        }
+
+        if (show(SettingsCategory.PRIVACY)) {
         item {
             SettingsCard(title = "隐私与存储") {
                 ChoiceRow(
@@ -254,6 +292,19 @@ fun SettingsScreen() {
             }
         }
 
+        }
+
+        if (show(SettingsCategory.BACKUP)) {
+            if (category == SettingsCategory.ALL) {
+                item { SettingsSectionTitle("备份与恢复") }
+            }
+            item { BackupSettings() }
+        }
+
+        if (show(SettingsCategory.ABOUT)) {
+            if (category == SettingsCategory.ALL) {
+                item { SettingsSectionTitle("关于") }
+            }
         item {
             SettingsCard(title = "关于") {
                 SettingTextRow("版本", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
@@ -293,6 +344,8 @@ fun SettingsScreen() {
             }
         }
     }
+
+        }
 
     if (showClearHistory) {
         ConfirmDialog(
@@ -352,6 +405,48 @@ fun SettingsScreen() {
             onDismiss = { showClearTemp = false },
         )
     }
+}
+
+private enum class SettingsCategory(val label: String) {
+    ALL("全部"),
+    DOWNLOAD("下载"),
+    FLOATING("浮球"),
+    APPEARANCE("外观"),
+    PRIVACY("隐私"),
+    BACKUP("备份"),
+    ABOUT("关于"),
+}
+
+@Composable
+private fun SettingsCategoryChips(
+    selected: SettingsCategory,
+    onSelect: (SettingsCategory) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SettingsCategory.entries.forEach { category ->
+            FilterChip(
+                selected = selected == category,
+                onClick = { onSelect(category) },
+                label = { Text(category.label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp, start = 2.dp),
+    )
 }
 
 @Composable

@@ -10,9 +10,9 @@
 
 当前结果：
 
-- release APK 构建通过（R8 优化，约 3.39 MB；debug 约 26 MB）
-- 67 个 JVM 单元测试通过
-- lint 0 error / 40 warnings + 1 hint
+- release APK 构建通过（R8 优化，约 3.44 MB；debug 约 26 MB）
+- 70 个 JVM 单元测试通过
+- lint 0 error / 42 warnings + 1 hint
 
 单元测试覆盖：
 
@@ -33,6 +33,7 @@
 | `DownloadProgressTrackerTest` | 单文件不重复累计、多文件从上一项继续、总大小不小于已下载字节 |
 | `DownloadDuplicatesTest` | 图片/动图/BGM/ZIP key、部分图片选择 key、跳过剩余判断（含 ZIP 新内容）、视频清晰度+编码 key、重复匹配 |
 | `FloatingAutoDownloadTest` | 浮球视频默认清晰度、图文 LivePhoto/BGM/ZIP 默认值、无可用档位跳过 |
+| `BackupModelsTest` | 配置全字段往返、缺字段默认值、非法枚举兼容 |
 
 ## 真机前准备
 
@@ -324,3 +325,19 @@ unzip -l ./tmp/<文件名>.zip
 - Android 7 只做了 minSdk 静态检查/Lint，没有 API 24 设备运行记录。
 - H.265 相册兼容性取决于设备解码器。
 - 验证码出现时的 WebView 交互、链接过期后的 `NEEDS_REFRESH` 流程需要按上面的清单继续回归。
+
+2026-11-01 v1.5.1 回归新增实测：
+
+- 浮球状态点：抖音前台为绿色；回到手机桌面、打开 DouyinKit 后为灰色；打开/关闭浮窗不再改变颜色
+- 点击浮球后图标按钮环绕弹出，分析按钮带悬空小字；拖动浮球时输入、分析、打开 App 和动态按钮跟随
+- 连播处理中显示“下一个/停止”，主“分析当前视频”入口变暗；完成后显示“查看结果”
+- 浮窗外圈进度环在等待解析时旋转扫描；下载时使用浮窗细进度条和状态提示
+- 浮窗与浮球分离，毛玻璃背景使用系统跨窗口模糊；浮球和操作按钮保持在模糊层之上
+- 设置页分类“全部/下载/浮球/外观/隐私/备份/关于”正常；浮球大小、透明度、浮窗样式/色调/不透明度/模糊/剪贴板开关正常
+- 配置 JSON 导出成功，包含 schemaVersion、versionCode/versionName、导出时间和全部设置
+- 记录 ZIP 导出 712 条（355 解析 + 357 下载），2.1MB；manifest.json、awemes.jsonl、downloads.jsonl 均能按 UTF-8 解析
+- 记录 ZIP 导入 355 + 357 条，0 跳过，导入后列表可刷新；配置兼容性单测覆盖缺字段、非法枚举和 schema 字段
+- 70 个 JVM 单测通过，Lint 0 error / 42 warnings + 1 hint
+
+本轮未覆盖：配置导入在部分第三方文件管理器中的 MIME/选择器表现、真实滑块验证码完整通过流程、
+OEM 强杀后的 JobScheduler 自动恢复（OPPO 会限制被强杀应用的后台启动）、Android 7 真机。

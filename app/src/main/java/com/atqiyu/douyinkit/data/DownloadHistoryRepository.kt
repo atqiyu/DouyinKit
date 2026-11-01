@@ -30,6 +30,12 @@ class DownloadHistoryRepository(
 
     suspend fun allTasks(): List<DownloadTask> = dao.getAll().mapNotNull { toTask(it) }
 
+    suspend fun allEntities(): List<DownloadHistoryEntity> = dao.getAll()
+
+    suspend fun importEntities(entities: List<DownloadHistoryEntity>) {
+        if (entities.isNotEmpty()) dao.upsertAll(entities)
+    }
+
     suspend fun save(task: DownloadTask) {
         val files = task.files.map { it.toRecord() }
         dao.upsert(

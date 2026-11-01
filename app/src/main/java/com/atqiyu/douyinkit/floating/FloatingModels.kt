@@ -1,6 +1,7 @@
 package com.atqiyu.douyinkit.floating
 
 import com.atqiyu.douyinkit.data.prefs.FloatingMode
+import com.atqiyu.douyinkit.data.prefs.FloatingPanelStyle
 
 enum class DouyinTarget { MAIN, LITE }
 
@@ -40,6 +41,13 @@ data class FloatingUiState(
     val needsVerification: Boolean = false,
     val needsLogin: Boolean = false,
     val appForeground: Boolean = false,
+    val orbSizeDp: Int = 48,
+    val orbAlpha: Float = 0.88f,
+    val panelOpacity: Float = 0.72f,
+    val panelStyle: FloatingPanelStyle = FloatingPanelStyle.GLASS,
+    val panelColorArgb: Long = 0xFF10141C,
+    val panelBlur: Int = 18,
+    val showClipboard: Boolean = true,
 )
 
 object DouyinPackages {
