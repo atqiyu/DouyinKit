@@ -2,7 +2,7 @@ package com.atqiyu.douyinkit.ui.downloads
 
 import com.atqiyu.douyinkit.data.prefs.DownloadSortMode
 
-const val UNCATEGORIZED_COLLECTION = "__uncategorized__"
+const val FAVORITES_COLLECTION = "__favorites__"
 
 val DownloadSortMode.label: String
     get() = when (this) {
@@ -51,10 +51,11 @@ fun filterDownloadGroups(
     groups: List<DownloadGroup>,
     filter: String?,
     membershipByAweme: Map<String, String>,
+    favoriteIds: Set<String> = emptySet(),
 ): List<DownloadGroup> {
     return when (filter) {
         null -> groups
-        UNCATEGORIZED_COLLECTION -> groups.filter { it.awemeId !in membershipByAweme }
+        FAVORITES_COLLECTION -> groups.filter { it.awemeId in favoriteIds }
         else -> groups.filter { membershipByAweme[it.awemeId] == filter }
     }
 }

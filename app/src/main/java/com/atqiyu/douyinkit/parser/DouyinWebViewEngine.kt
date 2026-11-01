@@ -2,6 +2,7 @@ package com.atqiyu.douyinkit.parser
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -9,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.view.ContextThemeWrapper
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
@@ -26,6 +28,7 @@ import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.atqiyu.douyinkit.BuildConfig
+import com.atqiyu.douyinkit.R
 import com.atqiyu.douyinkit.core.model.ErrorCode
 import com.atqiyu.douyinkit.core.net.DouyinUserAgent
 import com.atqiyu.douyinkit.core.util.LinkExtractor
@@ -150,8 +153,10 @@ sealed interface ParserEvent {
 /**
  * Owns exactly one WebView. The Activity hosting this engine must not be recreated while parsing
  * (ParseActivity declares configChanges); the engine is deliberately not kept in a ViewModel.
+ * A service may also host it for the floating assistant; in that case the WebView is attached to
+ * a small overlay window so page timers and the document-start hook keep running.
  */
-class DouyinWebViewEngine(private val activity: Activity) {
+class DouyinWebViewEngine(private val context: Context) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -165,10 +170,16 @@ class DouyinWebViewEngine(private val activity: Activity) {
     private var lastPageState: PageState = PageState()
     private var lastLoadedUrl: String = ""
 
+    private val themedContext: Context = if (context is Activity) {
+        context
+    } else {
+        ContextThemeWrapper(context, R.style.Theme_DouyinKit)
+    }
+
     private val injectionScript: String = buildString {
-        append(activity.assets.open("parser/hook.js").bufferedReader().use { it.readText() })
+        append(context.assets.open("parser/hook.js").bufferedReader().use { it.readText() })
         append("\n\n")
-        append(activity.assets.open("parser/page_model.js").bufferedReader().use { it.readText() })
+        append(context.assets.open("parser/page_model.js").bufferedReader().use { it.readText() })
     }
 
     private val documentStartSupported = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
@@ -177,7 +188,7 @@ class DouyinWebViewEngine(private val activity: Activity) {
     val desktopUserAgent: String
     val defaultUserAgent: String
 
-    val webView: WebView = WebView(activity).apply {
+    val webView: WebView = WebView(themedContext).apply {
         setBackgroundColor(android.graphics.Color.TRANSPARENT)
         isVerticalScrollBarEnabled = true
         isHorizontalScrollBarEnabled = false
@@ -189,7 +200,7 @@ class DouyinWebViewEngine(private val activity: Activity) {
     }
 
     init {
-        defaultUserAgent = WebSettings.getDefaultUserAgent(activity)
+        defaultUserAgent = WebSettings.getDefaultUserAgent(themedContext)
         desktopUserAgent = DouyinUserAgent.desktopFrom(defaultUserAgent)
 
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)

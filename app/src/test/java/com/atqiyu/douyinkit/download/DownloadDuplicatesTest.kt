@@ -77,6 +77,14 @@ class DownloadDuplicatesTest {
     }
 
     @Test
+    fun skipDoesNotDiscardAZipThatIsStillMissing() {
+        val allKeys = imageRequest().requestedMediaKeys()
+        val skipEverythingButZip = allKeys - DownloadMediaKeys.ZIP
+        assertTrue(imageRequest().hasContentAfterSkip(skipEverythingButZip))
+        assertFalse(imageRequest().hasContentAfterSkip(allKeys))
+    }
+
+    @Test
     fun duplicateMatchesOnlyExistingKeys() {
         val request = imageRequest()
         val existing = mapOf(

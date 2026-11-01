@@ -71,29 +71,31 @@ class DownloadSortingTest {
     }
 
     @Test
-    fun filtersCollectionsAndUncategorizedWorks() {
+    fun filtersFavoritesAndCollections() {
         val groups = listOf(
             group("1", "A", "Alice", 100),
             group("2", "B", "Bob", 200),
             group("3", "C", "Carol", 300),
         )
         val membership = mapOf("1" to "travel", "2" to "food")
+        val favorites = setOf("2", "3")
 
         assertEquals(
             listOf("1"),
             filterDownloadGroups(groups, "travel", membership).map { it.awemeId },
         )
         assertEquals(
-            listOf("3"),
+            listOf("2", "3"),
             filterDownloadGroups(
                 groups,
-                UNCATEGORIZED_COLLECTION,
+                FAVORITES_COLLECTION,
                 membership,
+                favorites,
             ).map { it.awemeId },
         )
         assertEquals(
             listOf("1", "2", "3"),
-            filterDownloadGroups(groups, null, membership).map { it.awemeId },
+            filterDownloadGroups(groups, null, membership, favorites).map { it.awemeId },
         )
     }
 }

@@ -64,19 +64,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import com.atqiyu.douyinkit.core.model.Aweme
 import com.atqiyu.douyinkit.core.model.AwemeKind
 import com.atqiyu.douyinkit.data.db.AwemeEntity
 import com.atqiyu.douyinkit.di.appContainer
+import com.atqiyu.douyinkit.ui.components.FadeInAsyncImage
 import com.atqiyu.douyinkit.ui.components.FeedSectionHeader
 import com.atqiyu.douyinkit.ui.components.ScrollProgressOverlay
 import com.atqiyu.douyinkit.ui.theme.BrandCyan
@@ -654,11 +653,10 @@ private fun LibraryCard(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (coverRequest != null) {
-                    AsyncImage(
+                    FadeInAsyncImage(
                         model = coverRequest,
                         contentDescription = entity.title,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
                     )
                 }
             }

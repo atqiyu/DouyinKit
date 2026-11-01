@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.map
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+enum class FloatingMode { STANDARD, AUTO }
+
 data class AppSettings(
     val defaultQualityHeight: Int = 1080,
     val preferH264: Boolean = true,
@@ -29,6 +31,9 @@ data class AppSettings(
     val downloadsGridView: Boolean = true,
     val downloadsSortMode: DownloadSortMode = DownloadSortMode.LATEST,
     val onboardingAccepted: Boolean = false,
+    val floatingBallEnabled: Boolean = false,
+    val floatingMode: FloatingMode = FloatingMode.STANDARD,
+    val floatingAutoDownload: Boolean = true,
 )
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -62,6 +67,13 @@ class SettingsRepository(private val context: Context) {
                     )
                 }.getOrDefault(DownloadSortMode.LATEST),
                 onboardingAccepted = prefs[KEY_ONBOARDING] ?: false,
+                floatingBallEnabled = prefs[KEY_FLOATING_ENABLED] ?: false,
+                floatingMode = runCatching {
+                    FloatingMode.valueOf(
+                        prefs[KEY_FLOATING_MODE] ?: FloatingMode.STANDARD.name,
+                    )
+                }.getOrDefault(FloatingMode.STANDARD),
+                floatingAutoDownload = prefs[KEY_FLOATING_AUTO_DOWNLOAD] ?: true,
             )
         }
 
@@ -113,6 +125,18 @@ class SettingsRepository(private val context: Context) {
         dataStore.edit { it[KEY_ONBOARDING] = accepted }
     }
 
+    suspend fun setFloatingBallEnabled(enabled: Boolean) {
+        dataStore.edit { it[KEY_FLOATING_ENABLED] = enabled }
+    }
+
+    suspend fun setFloatingMode(mode: FloatingMode) {
+        dataStore.edit { it[KEY_FLOATING_MODE] = mode.name }
+    }
+
+    suspend fun setFloatingAutoDownload(enabled: Boolean) {
+        dataStore.edit { it[KEY_FLOATING_AUTO_DOWNLOAD] = enabled }
+    }
+
     private companion object {
         val KEY_DEFAULT_QUALITY = intPreferencesKey("default_quality_height")
         val KEY_PREFER_H264 = booleanPreferencesKey("prefer_h264")
@@ -126,5 +150,8 @@ class SettingsRepository(private val context: Context) {
         val KEY_DOWNLOADS_GRID = booleanPreferencesKey("downloads_grid_view")
         val KEY_DOWNLOADS_SORT = stringPreferencesKey("downloads_sort_mode")
         val KEY_ONBOARDING = booleanPreferencesKey("onboarding_accepted")
+        val KEY_FLOATING_ENABLED = booleanPreferencesKey("floating_ball_enabled")
+        val KEY_FLOATING_MODE = stringPreferencesKey("floating_mode")
+        val KEY_FLOATING_AUTO_DOWNLOAD = booleanPreferencesKey("floating_auto_download")
     }
 }

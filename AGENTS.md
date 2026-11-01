@@ -12,7 +12,7 @@ Use:
 
 Do **not** ship or performance-test the debug APK. Compose/Room in debug mode made the old
 list scrolling 90th-percentile frames 69–93 ms; the R8 release build measures about
-11–12 ms. The release APK is also about 3.35 MB instead of about 26 MB.
+11–12 ms. The release APK is also about 3.39 MB instead of about 26 MB.
 
 The release build is signed with the standard Android debug keystore on purpose so personal
 sideload installs can update previous versions. Never commit a keystore or password.
@@ -24,7 +24,9 @@ sideload installs can update previous versions. Never commit a keystore or passw
 3. Update `CHANGELOG.md`, `README.md`, release notes and `docs/GITHUB_RELEASE.md`.
 4. Build `assembleRelease`, verify the signer, install on a real device, and smoke test:
    parsing, downloads, previews, Library and Downloads scrolling.
-5. Copy the APK to `dist/` (ignored by git), record its size and SHA-256 in the release notes,
+5. On a real device smoke-test the regular parser, downloads, Kit 浮球 (overlay/notification/
+   accessibility/clipboard focus/hidden WebView queue), and list scrolling in the R8 build.
+6. Copy the APK to `dist/` (ignored by git), record its size and SHA-256 in the release notes,
    then tag and publish.
 
 See [docs/R8_BUILD_REMINDER.md](docs/R8_BUILD_REMINDER.md) for the full checklist and

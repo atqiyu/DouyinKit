@@ -215,3 +215,29 @@
 - 新增根目录 `AGENTS.md` 与 `docs/R8_BUILD_REMINDER.md`，要求后续 Agent 发布/真机性能测试使用 R8 release 包，不用 debug 包评估。
 
 **后果**：首页首屏更紧凑，主操作按钮在常见屏幕上完整可见；首次使用有明确同意门；后续构建不容易再次误发 debug 包。
+
+## ADR-018：Kit 浮球、后台解析与无障碍自动化
+
+**状态**：已采纳
+
+**背景**：用户希望在抖音内直接完成“复制分享链接 → 解析 → 按默认值下载”，并在多个作品之间排队；
+Android 10+ 限制后台剪贴板读取，Android 12+ 限制后台启动前台服务，抖音页面本身也需要 WebView 环境。
+
+**决策**：
+- 使用 `FloatingAssistantService`（`specialUse` 前台服务 + 常驻低优先级通知 + `SYSTEM_ALERT_WINDOW`）
+  承载悬浮球、输入框和隐藏 WebView；不使用普通后台 Service。
+- 仅连播模式使用无障碍服务自动点击抖音“分享 → 分享链接”；用户必须手动在系统设置开启，
+  应用内明确说明用途和关闭入口。登录页只提示，不自动展开；验证码不绕过。
+- Android 10+ 剪贴板读取失败时，`ClipboardFocusReader` 短暂创建 1×1 可聚焦悬浮窗读取后立即移除；
+  不使用后台轮询。检测到抖音“链接已复制成功”无障碍提示也会触发一次补救读取。
+- 后台解析复用 `DouyinWebViewEngine` + `ParseController`，WebView 挂在 1×1 隐藏窗口；
+  验证时扩展为全屏。队列串行，自动下载成功后等待 `DownloadRegistry` 终止再解析下一项；
+  队列不落盘，进程被杀即丢失。
+- 自动下载沿用 `buildFloatingDownloadRequest` 的现有默认值，并通过 `DownloadDuplicates` 自动跳过重复。
+- `JobScheduler` 15 分钟 persisted 看护 + `BootCompletedReceiver` + App 启动恢复；OEM 电池/自启动限制
+  仍可能阻止恢复，设置中提供忽略电池优化入口。
+
+**后果**：
+- 浮球需要悬浮窗、通知和无障碍（连播）三类敏感权限；用户可随时关闭，绝不上传页面内容。
+- 抖音分享面板/按钮改版会影响连播模式，需要更新无障碍选择器；无障碍服务在部分设备应用更新后会被关闭。
+- 隐藏 WebView 首次解析仍需要 10–20 秒；验证/登录时会在浮球上覆盖页面，和主解析页行为保持一致。

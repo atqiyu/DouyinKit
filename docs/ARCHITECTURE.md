@@ -78,6 +78,7 @@ Room（版本 3）：
 
 DataStore：
 - 默认清晰度（0 = 最高清晰度）、优先 H.264、LivePhoto/BGM/ZIP 默认项、剪贴板识别、下载页网格/列表、下载页排序模式、主题/动态色、历史保留天数、免责声明状态
+- 浮球：启用状态、轻享/连播模式、连播自动下载开关
 
 下载请求扩展字段：
 - `imageIndexes`：非空时只下载指定的图片列表索引，用于部分图片下载；
@@ -116,6 +117,11 @@ DataStore：
 | `DouyinVideoPlayer` | 自定义交互的 Media3 播放器（单击暂停、平滑拖动进度、58dp 拖动热区、亮红发光高亮、信息隐藏） |
 | `InlineLoopingVideo` | 图片 Pager 内的 LivePhoto 循环播放（TextureView，可继续左右滑动；有 BGM 时静音且不抢音频焦点） |
 | `AutoLoopingAudio` | 图文作品预览的无界面 BGM 循环播放器，随内容切换和生命周期暂停/恢复；LivePhoto 播放期间保持 |
+| `FloatingAssistantService` | Kit 浮球前台服务、悬浮窗、剪贴板监听、常驻通知 |
+| `FloatingParseQueue` / `FloatingWebViewHost` | 隐藏 WebView 顺序解析、自动下载等待与验证页面 |
+| `DouyinAccessibilityService` | 抖音/极速版前台识别、分享按钮/分享链接自动点击 |
+| `ClipboardFocusReader` | Android 10+ 后台剪贴板的短暂焦点读取补救 |
+| `FloatingAssistantScheduler` / `FloatingAssistantJobService` | JobScheduler 周期看护与恢复 |
 | `ImageViewerDialog` / `AudioPreviewDialog` | 结果页/详情页图片缩放与音频试听 |
 
 ## 生命周期与线程
@@ -125,3 +131,25 @@ DataStore：
 - WebView 回调在主线程；Room/下载在 IO；UI 通过 StateFlow 观察。资料库与下载页的 Room JSON 解码、下载任务重建、分组构建和 feed 排序在 `Dispatchers.Default` 完成，避免首屏阻塞主线程。
 - 手动 DI（`AppContainer`）避免 Hilt 构建复杂度；所有依赖从 `Application` 或 `Context.appContainer` 获取。
 - `MainScreen` 保留已访问标签页的 Composition（未显示页面跳过测量与绘制），切换时只做约 180 ms 的 alpha/位移过渡，不重建页面；剪贴板监听提升到 `MainScreen` 生命周期，避免切标签重复注册和重复解析。`MainActivity` 的结果页和资料库详情页都以覆盖层呈现，底层页面保持存活，系统返回键由对应层级消费。
+
+## Kit 浮球
+
+浮球是可选的前台辅助进程，入口在设置中；它不改变主解析链路，只在用户开启后增加：
+
+- `FloatingAssistantService`：`specialUse` 前台服务，持有悬浮球/面板/输入框窗口、剪贴板监听、
+  `FloatingParseQueue` 和常驻通知；`SYSTEM_ALERT_WINDOW` 使其能在其他应用上层显示。
+- `DouyinAccessibilityService`：用户手动开启的无障碍服务；只读取抖音/抖音极速版窗口，维护前台状态，
+  在连播模式中点击“分享 → 分享链接”。不处理验证码，不导出页面内容。
+- `ClipboardFocusReader`：Android 10+ 后台剪贴板限制的补救。分享复制后短暂创建 1×1 可聚焦悬浮窗，
+  读取剪贴板后立即移除，把焦点还给抖音。
+- `FloatingParseQueue`：复用 `DouyinWebViewEngine` + `ParseController`，WebView 挂在 1×1 隐藏窗口；
+  一次只解析一个作品，解析后按默认值自动下载并等待 `DownloadRegistry` 终止，再处理队列下一项。
+- 安全验证/登录：验证状态把同一个 WebView 扩展为全屏页面；登录只提示手动打开。
+- `FloatingAssistantJobService` + `FloatingAssistantScheduler`：15 分钟 persisted JobScheduler 看护；
+  `BootCompletedReceiver` 在开机/更新后重新注册；OEM 可能仍阻止后台启动，设置提供电池优化入口。
+- `MainActivity` 启动/恢复时检查 `floatingBallEnabled` 并恢复服务；应用更新后部分系统会关闭无障碍，
+  设置卡片会显示未授权并提供入口。
+
+浮球的自动下载使用 `buildFloatingDownloadRequest`：视频按默认清晰度/优先 H.264，图文按
+LivePhoto/BGM/ZIP 默认开关，不自动下载封面；入队前复用 `DownloadDuplicates`，重复内容自动跳过。
+队列只在进程内保存，服务被杀后丢失。详见 [FLOATING_ASSISTANT.md](FLOATING_ASSISTANT.md)。

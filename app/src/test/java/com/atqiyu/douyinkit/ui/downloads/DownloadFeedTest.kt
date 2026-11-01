@@ -101,7 +101,18 @@ class DownloadFeedTest {
         assertEquals(listOf("1"), feed(collection = "c1").groups.map { it.awemeId })
         assertEquals(
             listOf("2"),
-            feed(collection = UNCATEGORIZED_COLLECTION).groups.map { it.awemeId },
+            buildDownloadFeed(
+                groups = groups,
+                sortMode = DownloadSortMode.LATEST,
+                collectionFilter = FAVORITES_COLLECTION,
+                membershipByAweme = membership,
+                collectionNames = collectionNames,
+                tagsByAweme = tags,
+                query = "",
+                dateFilter = null,
+                today = today,
+                favoriteIds = setOf("2"),
+            ).groups.map { it.awemeId },
         )
     }
 

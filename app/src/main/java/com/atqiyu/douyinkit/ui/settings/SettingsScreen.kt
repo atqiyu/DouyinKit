@@ -215,6 +215,10 @@ fun SettingsScreen() {
         }
 
         item {
+            FloatingBallSettings()
+        }
+
+        item {
             SettingsCard(title = "隐私与存储") {
                 ChoiceRow(
                     title = "解析历史保留",

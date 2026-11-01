@@ -9,7 +9,7 @@ debug 构建不混淆、不裁剪，Compose/Room 的额外开销很大。2026-11
 | 构建 | APK 大小 | 资料库滚动 90 分位 | 下载页滚动 90 分位 |
 |---|---:|---:|---:|
 | debug | 约 26 MB | 约 69–93 ms | 约 69 ms |
-| R8 release | 约 3.35 MB | 约 12 ms | 约 11 ms |
+| R8 release | 约 3.39 MB | 约 12 ms | 约 11 ms |
 
 同一轮快速连续滑动中，release 的卡顿帧分别为资料库 2.27%、下载页 0.28%。因此：
 - 性能问题必须先在 release 包上复现，不能只看 debug。
@@ -63,6 +63,10 @@ R8 可能裁剪反射、序列化或 WebView 桥。改动以下区域后必须�
 - Room：实体、DAO、数据库迁移、旧记录读取。
 - Coil/Media3：封面、视频播放、LivePhoto、BGM。
 - 文件分享/FileProvider 和 MediaStore 保存。
+- Kit 浮球：`FloatingAssistantService`（specialUse 前台服务/通知）、
+  `DouyinAccessibilityService`（无障碍组件/分享点击）、悬浮输入框、1×1 隐藏 WebView、
+  `ClipboardFocusReader`、`FloatingAssistantJobService` 和 `BootCompletedReceiver`。
+  这些组件在 manifest 中声明，但仍需在 release 包上验证 R8 后权限、服务和点击链路。
 
 `app/proguard-rules.pro` 已保留序列化器、WebView JS 接口、Room 基类/实体和 OkHttp 相关类。新增反射型库时要补规则。
 

@@ -93,6 +93,7 @@ import com.atqiyu.douyinkit.core.util.formatCreateTime
 import com.atqiyu.douyinkit.download.DownloadService
 import com.atqiyu.douyinkit.download.DownloadStatus
 import com.atqiyu.douyinkit.download.DownloadTask
+import com.atqiyu.douyinkit.ui.components.FadeInAsyncImage
 import com.atqiyu.douyinkit.ui.preview.AudioPreviewDialog
 import com.atqiyu.douyinkit.ui.preview.AutoLoopingAudio
 import com.atqiyu.douyinkit.ui.preview.DouyinVideoPlayer
@@ -235,7 +236,7 @@ fun WorkPreviewDialog(
                                     muteAudio = imageBgmUrl != null,
                                 )
                             } else {
-                                AsyncImage(
+                                FadeInAsyncImage(
                                     model = page.image.file.uri,
                                     contentDescription = null,
                                     modifier = Modifier
@@ -248,7 +249,7 @@ fun WorkPreviewDialog(
                                         .fillMaxSize()
                                         .background(Color.Black.copy(alpha = 0.28f)),
                                 )
-                                AsyncImage(
+                                FadeInAsyncImage(
                                     model = page.image.file.uri,
                                     contentDescription = page.image.title,
                                     modifier = Modifier.fillMaxSize(),
@@ -695,7 +696,7 @@ private fun EmptyStage(group: DownloadGroup) {
         contentAlignment = Alignment.Center,
     ) {
         group.coverModel?.let { cover ->
-            AsyncImage(
+            FadeInAsyncImage(
                 model = cover,
                 contentDescription = null,
                 modifier = Modifier
@@ -755,7 +756,7 @@ private fun AudioStage(
         contentAlignment = Alignment.Center,
     ) {
         group.coverModel?.let { cover ->
-            AsyncImage(
+            FadeInAsyncImage(
                 model = cover,
                 contentDescription = null,
                 modifier = Modifier

@@ -41,6 +41,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.atqiyu.douyinkit.data.prefs.AppSettings
 import com.atqiyu.douyinkit.data.prefs.ThemeMode
 import com.atqiyu.douyinkit.di.appContainer
+import com.atqiyu.douyinkit.floating.FloatingAssistantBus
+import com.atqiyu.douyinkit.floating.FloatingAssistantScheduler
+import com.atqiyu.douyinkit.floating.FloatingAssistantService
 import com.atqiyu.douyinkit.parser.ParseActivity
 import com.atqiyu.douyinkit.parser.ParseBatchResult
 import com.atqiyu.douyinkit.parser.ParseSessionStore
@@ -66,6 +69,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             MainContent(sharedTextFlow = incomingSharedText)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        FloatingAssistantBus.setAppForeground(true)
+        FloatingAssistantBus.setForeground(packageName)
+    }
+
+    override fun onPause() {
+        FloatingAssistantBus.setAppForeground(false)
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -94,6 +108,12 @@ private fun MainContent(sharedTextFlow: MutableStateFlow<String>) {
         .collectAsStateWithLifecycle(initialValue = null)
     val settings = loadedSettings ?: AppSettings()
     val settingsLoaded = loadedSettings != null
+    LaunchedEffect(settingsLoaded, settings.floatingBallEnabled) {
+        if (settingsLoaded && settings.floatingBallEnabled) {
+            runCatching { FloatingAssistantService.start(context) }
+            FloatingAssistantScheduler.schedule(context)
+        }
+    }
     val darkTheme = when (settings.themeMode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false

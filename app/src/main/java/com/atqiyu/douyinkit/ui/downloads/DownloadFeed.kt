@@ -39,10 +39,11 @@ fun buildDownloadFeed(
     query: String,
     dateFilter: LocalDate?,
     today: LocalDate = LocalDate.now(),
+    favoriteIds: Set<String> = emptySet(),
 ): DownloadFeed {
     val collectionFiltered = when (collectionFilter) {
         null -> groups
-        UNCATEGORIZED_COLLECTION -> groups.filter { it.awemeId !in membershipByAweme }
+        FAVORITES_COLLECTION -> groups.filter { it.awemeId in favoriteIds }
         else -> groups.filter { membershipByAweme[it.awemeId] == collectionFilter }
     }
     val normalizedQuery = query.trim()

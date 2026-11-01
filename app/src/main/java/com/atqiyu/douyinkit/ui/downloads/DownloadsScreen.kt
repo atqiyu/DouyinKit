@@ -82,7 +82,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.video.videoFrameMillis
 import com.atqiyu.douyinkit.core.model.AwemeKind
@@ -93,6 +92,7 @@ import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.download.DownloadRegistry
 import com.atqiyu.douyinkit.download.DownloadService
 import com.atqiyu.douyinkit.download.DownloadTask
+import com.atqiyu.douyinkit.ui.components.FadeInAsyncImage
 import com.atqiyu.douyinkit.ui.components.FeedDatePickerDialog
 import com.atqiyu.douyinkit.ui.components.FeedSectionHeader
 import com.atqiyu.douyinkit.ui.components.ScrollProgressOverlay
@@ -165,6 +165,12 @@ fun DownloadsScreen() {
     val tagsByAweme = remember(historyEntities) {
         historyEntities.associate { it.awemeId to historyRepository.tagsOf(it) }
     }
+    val favoriteIds = remember(historyEntities) {
+        historyEntities.asSequence()
+            .filter { it.isFavorite }
+            .map { it.awemeId }
+            .toSet()
+    }
 
     var collectionFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var sortModeOverride by remember { mutableStateOf<DownloadSortMode?>(null) }
@@ -187,6 +193,7 @@ fun DownloadsScreen() {
         query,
         dateFilter,
         today,
+        favoriteIds,
     ) {
         buildDownloadFeed(
             groups = groups,
@@ -198,6 +205,7 @@ fun DownloadsScreen() {
             query = query,
             dateFilter = dateFilter,
             today = today,
+            favoriteIds = favoriteIds,
         )
     }
     val visibleGroups = feed.groups
@@ -206,7 +214,7 @@ fun DownloadsScreen() {
     val totalBytes = visibleGroups.sumOf { it.totalBytes }
     val filterLabel = when (collectionFilter) {
         null -> null
-        UNCATEGORIZED_COLLECTION -> "未分类"
+        FAVORITES_COLLECTION -> "收藏"
         else -> collectionById[collectionFilter]?.name
     }
 
@@ -279,7 +287,7 @@ fun DownloadsScreen() {
 
     LaunchedEffect(collections, collectionFilter) {
         val filter = collectionFilter ?: return@LaunchedEffect
-        if (filter != UNCATEGORIZED_COLLECTION && collections.none { it.id == filter }) {
+        if (filter != FAVORITES_COLLECTION && collections.none { it.id == filter }) {
             collectionFilter = null
         }
     }
@@ -1297,11 +1305,10 @@ private fun GroupCover(
             modifier = Modifier.size(34.dp),
         )
         if (request != null) {
-            AsyncImage(
+            FadeInAsyncImage(
                 model = request,
                 contentDescription = group.title,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
                 onError = {
                     if (shown === primary && !primaryFailed) {
                         primaryFailed = true

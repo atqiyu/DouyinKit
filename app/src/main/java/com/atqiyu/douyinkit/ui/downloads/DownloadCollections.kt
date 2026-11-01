@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ButtonDefaults
@@ -75,9 +76,16 @@ fun CollectionFilterRow(
             label = { Text("全部") },
         )
         FilterChip(
-            selected = selected == UNCATEGORIZED_COLLECTION,
-            onClick = { onSelect(UNCATEGORIZED_COLLECTION) },
-            label = { Text("未分类") },
+            selected = selected == FAVORITES_COLLECTION,
+            onClick = { onSelect(FAVORITES_COLLECTION) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.Star,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                )
+            },
+            label = { Text("收藏") },
         )
         controls()
         collections.forEach { collection ->
@@ -160,14 +168,6 @@ fun MoveToCollectionSheet(
                 contentPadding = PaddingValues(vertical = 2.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                item(key = "uncategorized") {
-                    CollectionChoiceRow(
-                        name = "未分类",
-                        subtitle = "不放入任何合集",
-                        selected = currentCollectionId == null,
-                        onClick = { onSelect(null) },
-                    )
-                }
                 items(collections, key = { it.id }) { collection ->
                     CollectionChoiceRow(
                         name = collection.name,
@@ -403,7 +403,7 @@ fun DeleteCollectionDialog(
         text = {
             Text(
                 "合集「${collection.name}」中的 $workCount 个作品不会被删除，" +
-                    "只会回到“未分类”。此操作不可撤销。",
+                    "只会解除合集归属。解析记录和本地文件都会保留，此操作不可撤销。",
             )
         },
         confirmButton = {

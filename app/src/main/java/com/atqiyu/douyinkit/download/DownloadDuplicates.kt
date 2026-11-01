@@ -84,7 +84,9 @@ fun DownloadRequest.hasContentAfterSkip(skipKeys: Set<String>): Boolean = when (
         val musicRemaining = includeMusic &&
             aweme.music != null &&
             DownloadMediaKeys.MUSIC !in skipKeys
-        imageRemaining || musicRemaining
+        val zipRemaining = (createZip || kind == DownloadKind.ZIP) &&
+            DownloadMediaKeys.ZIP !in skipKeys
+        imageRemaining || musicRemaining || zipRemaining
     }
 }
 

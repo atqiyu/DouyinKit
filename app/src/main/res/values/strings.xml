@@ -10,4 +10,6 @@
     <string name="recent">最近解析</string>
     <string name="recent_empty">解析过的作品会出现在这里</string>
     <string name="local_disclaimer">仅用于个人学习与已授权内容的本地备份，请遵守平台条款与版权规定。</string>
+    <string name="accessibility_service_label">Kit 浮球自动化</string>
+    <string name="accessibility_service_description">用于识别抖音或抖音极速版是否在前台，并在连播模式下自动点击分享按钮。所有识别和操作只在本机完成，不上传页面内容。</string>
 </resources>

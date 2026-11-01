@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.atqiyu.douyinkit.MainActivity
 import com.atqiyu.douyinkit.core.util.LinkExtractor
 import com.atqiyu.douyinkit.data.prefs.AppSettings
 import com.atqiyu.douyinkit.data.prefs.ThemeMode
@@ -32,6 +33,7 @@ class ParseActivity : ComponentActivity() {
     private lateinit var controller: ParseController
     private var inputs: List<String> = emptyList()
     private var forceRefresh: Boolean = false
+    private var openResultInApp: Boolean = false
     private var published = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,6 +45,7 @@ class ParseActivity : ComponentActivity() {
 
         inputs = intent.getStringArrayListExtra(EXTRA_INPUTS).orEmpty()
         forceRefresh = intent.getBooleanExtra(EXTRA_FORCE_REFRESH, false)
+        openResultInApp = intent.getBooleanExtra(EXTRA_OPEN_RESULT_IN_APP, false)
 
         val container = applicationContext.appContainer
         engine = DouyinWebViewEngine(this)
@@ -119,6 +122,18 @@ class ParseActivity : ComponentActivity() {
                             failures = state.failures,
                         ),
                     )
+                    if (openResultInApp) {
+                        runCatching {
+                            startActivity(
+                                Intent(this@ParseActivity, MainActivity::class.java).apply {
+                                    addFlags(
+                                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                                            Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                                    )
+                                },
+                            )
+                        }
+                    }
                     setResult(RESULT_OK)
                     finish()
                 }
@@ -147,15 +162,18 @@ class ParseActivity : ComponentActivity() {
     companion object {
         const val EXTRA_INPUTS = "extra_inputs"
         const val EXTRA_FORCE_REFRESH = "extra_force_refresh"
+        const val EXTRA_OPEN_RESULT_IN_APP = "extra_open_result_in_app"
 
         fun intent(
             context: Context,
             inputs: List<String>,
             forceRefresh: Boolean = false,
+            openResultInApp: Boolean = false,
         ): Intent {
             return Intent(context, ParseActivity::class.java).apply {
                 putStringArrayListExtra(EXTRA_INPUTS, ArrayList(inputs))
                 putExtra(EXTRA_FORCE_REFRESH, forceRefresh)
+                putExtra(EXTRA_OPEN_RESULT_IN_APP, openResultInApp)
             }
         }
     }

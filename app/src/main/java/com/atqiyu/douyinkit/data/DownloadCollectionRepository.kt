@@ -34,7 +34,7 @@ class DownloadCollectionRepository(private val dao: DownloadCollectionDao) {
         dao.deleteCollection(id)
     }
 
-    /** A work belongs to at most one collection; null moves it back to "未分类". */
+    /** A work belongs to at most one collection; null clears its collection membership. */
     suspend fun move(awemeId: String, collectionId: String?) {
         dao.removeMember(awemeId)
         if (collectionId != null) {
