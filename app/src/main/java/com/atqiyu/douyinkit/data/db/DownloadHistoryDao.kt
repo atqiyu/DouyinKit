@@ -6,8 +6,18 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
+data class AwemeLatestDownload(
+    val awemeId: String,
+    val latestAt: Long,
+)
+
 @Dao
 interface DownloadHistoryDao {
+    @Query(
+        "SELECT awemeId, MAX(createdAt) AS latestAt FROM download_history GROUP BY awemeId",
+    )
+    fun observeLatestDownloadTimes(): Flow<List<AwemeLatestDownload>>
+
     @Query("SELECT * FROM download_history ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<DownloadHistoryEntity>>
 

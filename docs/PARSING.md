@@ -23,7 +23,7 @@
 
 - 桌面 Chrome UA：从 WebView 默认 UA 提取 Chrome 版本，避免版本号明显不一致
 - JavaScript、DOM Storage、第三方 Cookie、wide viewport；禁用文件/内容访问、弹窗、混合内容、地理定位
-- 全屏 WebView 位于解析进度层下方，真实渲染；验证码时进度层收起，用户可直接操作页面
+- 全屏 WebView 位于解析进度层下方，真实渲染；检测到登录/验证或页面长时间未返回数据时进度层自动收起，用户可直接操作页面
 - `WebView.setWebContentsDebuggingEnabled` 仅在 debug 构建开启
 - SSL 错误拒绝；导航只允许抖音域名；`intent://`、`snssdk1128://` 等外部 scheme 被拦截
 - `onRenderProcessGone` 视为 fatal，提示重试
@@ -65,7 +65,7 @@ Kotlin 侧校验：
 1. **XHR/fetch**：包装 `open/send` 和 `fetch`，只处理 URL 含 `/aweme/v1/web/aweme/detail/` 的响应；XHR 兼容 `responseType=json`。
 2. **页面模型**：`page_model.js` 遍历 `#root` 的 React fiber、`_ROUTER_DATA`、`SSR_HYDRATED_DATA`、`RENDER_DATA` 等，按 aweme_id、档位数量、图片数量、作者/统计/playApi 打分，返回最佳详情对象。
 3. **图文补齐**：检测到 `images` 后加载 `/note/<id>`，等页面 ready，再提取页面模型；按档位名/分辨率/图片 uri 合并 fps、codec、playApi、LivePhoto。
-4. **验证码**：页面文本/href 出现 captcha/verify/安全验证，或长时间无详情且无 root，自动显示页面；用户完成后详情响应会继续被捕获。总等待最多 120 秒。不实现验证码破解。
+4. **登录/验证页**：`__DK_getState` 扫描验证码 DOM、验证 iframe（含开放 shadow root）、标题/正文关键词、验证 URL；`ParseController` 收到 `challenge` 后立即展开 WebView，并把等待延长到 120 秒。页面已完成但 8 秒没有详情时自动展开，加载中 15 秒兜底；验证阶段不会被 `/note/` 阶段自动收起。验证 iframe 和验证/登录主页面域名允许导航，避免验证码被拦截。用户完成后详情响应会继续被捕获；不实现验证码破解。
 5. **失败**：抛出 `DETAIL_TIMEOUT` / `NEEDS_VERIFICATION` / `NO_MEDIA` 等错误，结果页提供重试/打开页面/重新解析。
 
 ## 诊断

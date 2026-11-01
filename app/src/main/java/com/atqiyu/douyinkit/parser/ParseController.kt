@@ -201,16 +201,16 @@ class ParseController(
         var aweme = normalizeBundle(bundle, resolved)
 
         if (aweme.kind == AwemeKind.IMAGES) {
+            // Keep an already expanded verification page visible; navigating to /note/
+            // must not hide a challenge the user is still solving.
             _state.update {
                 it.copy(
                     stage = ParseStage.WAITING_NOTE,
                     message = "正在读取图文与 LivePhoto 数据",
-                    showWebView = false,
-                    needsVerification = false,
                 )
             }
             engine.loadNote(awemeId)
-            awaitNoteReady(awemeId, 10_000)
+            awaitNoteReady(10_000)
             val noteSince = System.currentTimeMillis()
             _state.update { it.copy(stage = ParseStage.ENRICHING, message = "正在整理图片信息") }
             engine.requestPageModel(awemeId)
@@ -309,14 +309,7 @@ class ParseController(
                     if (event.state.looksLikeChallenge && !challengeExtended) {
                         challengeExtended = true
                         deadline = System.currentTimeMillis() + VERIFICATION_TIMEOUT_MS
-                        _state.update {
-                            it.copy(
-                                stage = ParseStage.VERIFYING,
-                                showWebView = true,
-                                needsVerification = true,
-                                message = "请在页面中完成安全验证，完成后会自动继续",
-                            )
-                        }
+                        markVerification()
                     }
                 }
 
@@ -336,6 +329,30 @@ class ParseController(
             }
 
             val now = System.currentTimeMillis()
+            if (!challengeExtended && !_state.value.showWebView) {
+                val elapsed = now - itemStart
+                val current = pageState
+                if (current != null && elapsed >= autoShowDelay(current)) {
+                    _state.update {
+                        it.copy(
+                            showWebView = true,
+                            message = if (current.readyState == "complete") {
+                                "页面已加载但作品数据尚未就绪，已自动展开页面；如出现验证请完成"
+                            } else {
+                                "解析较慢，已自动展开页面查看状态"
+                            },
+                        )
+                    }
+                } else if (current == null && elapsed >= AUTO_SHOW_LOADING_MS) {
+                    _state.update {
+                        it.copy(
+                            showWebView = true,
+                            message = "解析较慢，已自动展开页面查看状态",
+                        )
+                    }
+                }
+            }
+
             if (now >= nextProbe) {
                 nextProbe = now + PROBE_INTERVAL_MS
                 engine.requestPageModel(awemeId)
@@ -346,21 +363,7 @@ class ParseController(
                     if (state.looksLikeChallenge && !challengeExtended) {
                         challengeExtended = true
                         deadline = now + VERIFICATION_TIMEOUT_MS
-                        _state.update {
-                            it.copy(
-                                stage = ParseStage.VERIFYING,
-                                showWebView = true,
-                                needsVerification = true,
-                                message = "请在页面中完成安全验证，完成后会自动继续",
-                            )
-                        }
-                    } else if (!challengeExtended && now - itemStart > SLOW_PARSE_MS) {
-                        _state.update {
-                            it.copy(
-                                showWebView = true,
-                                message = "解析较慢，可展开页面查看状态",
-                            )
-                        }
+                        markVerification()
                     }
                 }
             }
@@ -387,29 +390,58 @@ class ParseController(
         return CaptureBundle(detail = detail, page = page, pageState = pageState)
     }
 
-    private suspend fun awaitNoteReady(awemeId: String, timeoutMs: Long) {
-        val deadline = System.currentTimeMillis() + timeoutMs
+    private suspend fun awaitNoteReady(timeoutMs: Long) {
+        var deadline = System.currentTimeMillis() + timeoutMs
+        var nextProbe = System.currentTimeMillis() + 1_000
+        var verificationExtended = false
+
+        fun handleState(state: PageState) {
+            if (state.looksLikeChallenge) {
+                markVerification("请在页面中完成验证，完成后会自动继续")
+                if (!verificationExtended) {
+                    verificationExtended = true
+                    deadline = System.currentTimeMillis() + VERIFICATION_TIMEOUT_MS
+                }
+            } else if (state.href.contains("/note/") && state.readyState == "complete") {
+                _state.update {
+                    if (it.needsVerification) {
+                        it.copy(needsVerification = false, message = "验证已完成，正在继续解析")
+                    } else {
+                        it
+                    }
+                }
+            }
+        }
+
         while (System.currentTimeMillis() < deadline) {
             val event = withTimeoutOrNull(300) { events.receive() }
             when (event) {
                 is ParserEvent.PageReady -> {
-                    if (event.state.href.contains("/note/")) {
-                        if (event.state.looksLikeChallenge) {
-                            _state.update {
-                                it.copy(
-                                    stage = ParseStage.VERIFYING,
-                                    showWebView = true,
-                                    needsVerification = true,
-                                    message = "请在页面中完成验证，完成后会自动继续",
-                                )
-                            }
-                        }
+                    handleState(event.state)
+                    if (event.state.href.contains("/note/") &&
+                        !event.state.looksLikeChallenge &&
+                        event.state.readyState == "complete"
+                    ) {
                         return
                     }
                 }
 
                 is ParserEvent.Fatal -> throw DouyinKitException(event.code, event.message)
                 else -> Unit
+            }
+
+            if (System.currentTimeMillis() >= nextProbe) {
+                nextProbe = System.currentTimeMillis() + 1_000
+                val state = runCatching { engine.readPageState() }.getOrNull()
+                if (state != null) {
+                    handleState(state)
+                    if (state.href.contains("/note/") &&
+                        !state.looksLikeChallenge &&
+                        state.readyState == "complete"
+                    ) {
+                        return
+                    }
+                }
             }
         }
     }
@@ -441,14 +473,7 @@ class ParseController(
 
                 is ParserEvent.PageReady -> {
                     if (event.state.looksLikeChallenge) {
-                        _state.update {
-                            it.copy(
-                                stage = ParseStage.VERIFYING,
-                                showWebView = true,
-                                needsVerification = true,
-                                message = "请在页面中完成验证，完成后会自动继续",
-                            )
-                        }
+                        markVerification("请在页面中完成验证，完成后会自动继续")
                     }
                 }
 
@@ -464,6 +489,25 @@ class ParseController(
 
         return engine.cachedPageModel(awemeId)?.takeIf { it.receivedAt >= since }
             ?: engine.cachedDetail(awemeId)?.takeIf { it.receivedAt >= since }
+    }
+
+    private fun markVerification(message: String = "请在页面中完成安全验证，完成后会自动继续") {
+        _state.update {
+            it.copy(
+                stage = ParseStage.VERIFYING,
+                showWebView = true,
+                needsVerification = true,
+                message = message,
+            )
+        }
+    }
+
+    private fun autoShowDelay(state: PageState): Long {
+        return if (state.readyState == "complete") {
+            AUTO_SHOW_READY_MS
+        } else {
+            AUTO_SHOW_LOADING_MS
+        }
     }
 
     private fun startTicker() {
@@ -507,7 +551,8 @@ class ParseController(
         private const val VERIFICATION_TIMEOUT_MS = 120_000L
         private const val FIRST_PROBE_MS = 7_000L
         private const val PROBE_INTERVAL_MS = 6_000L
-        private const val SLOW_PARSE_MS = 20_000L
+        private const val AUTO_SHOW_READY_MS = 8_000L
+        private const val AUTO_SHOW_LOADING_MS = 15_000L
         private const val PAGE_ONLY_FALLBACK_MS = 22_000L
     }
 }

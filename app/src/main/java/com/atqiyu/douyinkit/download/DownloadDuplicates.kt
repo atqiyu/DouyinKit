@@ -52,6 +52,7 @@ fun DownloadRequest.requestedMediaKeys(): Set<String> = when (kind) {
     DownloadKind.COVER -> setOf(DownloadMediaKeys.COVER)
     DownloadKind.IMAGES, DownloadKind.ZIP -> buildSet {
         aweme.images.forEachIndexed { index, image ->
+            if (imageIndexes != null && index !in imageIndexes) return@forEachIndexed
             add(DownloadMediaKeys.image(index))
             if (includeLivePhotos && image.isLivePhoto && image.livePhoto != null) {
                 add(DownloadMediaKeys.live(index))
@@ -68,13 +69,17 @@ fun DownloadRequest.hasContentAfterSkip(skipKeys: Set<String>): Boolean = when (
     DownloadKind.COVER -> DownloadMediaKeys.COVER !in skipKeys
     DownloadKind.IMAGES, DownloadKind.ZIP -> {
         val imageRemaining = aweme.images.indices.any { index ->
-            DownloadMediaKeys.image(index) !in skipKeys ||
-                (
-                    includeLivePhotos &&
-                        aweme.images[index].isLivePhoto &&
-                        aweme.images[index].livePhoto != null &&
-                        DownloadMediaKeys.live(index) !in skipKeys
-                    )
+            if (imageIndexes != null && index !in imageIndexes) {
+                false
+            } else {
+                DownloadMediaKeys.image(index) !in skipKeys ||
+                    (
+                        includeLivePhotos &&
+                            aweme.images[index].isLivePhoto &&
+                            aweme.images[index].livePhoto != null &&
+                            DownloadMediaKeys.live(index) !in skipKeys
+                        )
+            }
         }
         val musicRemaining = includeMusic &&
             aweme.music != null &&

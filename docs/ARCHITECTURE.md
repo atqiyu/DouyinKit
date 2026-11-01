@@ -27,11 +27,13 @@ Domain / data
 3. `ParseActivity` 创建单个 `DouyinWebViewEngine`，全屏 WebView 位于解析进度层下方，使用桌面 Chrome UA、持久 Cookie、禁用文件访问。
 4. `hook.js` 在 document-start 注入（不支持时退化为 `onPageStarted`），包装 XHR/fetch，只捕获 `/aweme/v1/web/aweme/detail/`。
 5. 详情 JSON 在 JS 侧按白名单裁剪，经 `WebMessageListener` 回传；旧 WebView 用 `@JavascriptInterface` 回退。桥只接受合法 aweme_id、大小受限的 JSON，并校验来源域名。
-6. `DouyinDetailNormalizer` 宽容解析 snake_case 与 camelCase，生成 `Aweme`：视频档位、封面、作者、统计、图集、LivePhoto、BGM。
-7. 图文作品额外打开 `/note/<id>`，`page_model.js` 遍历 React fiber / SSR 数据，补齐 LivePhoto、fps、codec、playApi；与详情结果按档位名/图片 uri 合并。
-8. 结果保存到 Room，交给 `ParseSessionStore`，`MainActivity` 展示结果页。
+6. `hook.js` 的 `__DK_getState` 同时扫描验证码 DOM、验证 iframe（含开放 shadow root）、页面标题/正文关键词和验证 URL，返回 `challenge`/`challengeReason`；`ParseController` 检测到后立即展开 WebView 并延长到 120 秒。
+7. 页面已加载但 8 秒没有详情时自动展开 WebView；页面仍在加载时 15 秒兜底；验证阶段不再被 `/note/` 阶段重置。验证 iframe 和验证/登录主页面域名加入 WebView 导航白名单，避免验证码页面被拦截。
+8. `DouyinDetailNormalizer` 宽容解析 snake_case 与 camelCase，生成 `Aweme`：视频档位、封面、作者、统计、图集、LivePhoto、BGM。
+9. 图文作品额外打开 `/note/<id>`，`page_model.js` 遍历 React fiber / SSR 数据，补齐 LivePhoto、fps、codec、playApi；与详情结果按档位名/图片 uri 合并。
+10. 结果保存到 Room，交给 `ParseSessionStore`，`MainActivity` 展示结果页。
 
-超时：总等待 45 秒；检测到验证码后延长到 120 秒并显示 WebView；页面模型兜底 22 秒；图文额外 10 秒。
+超时：总等待 45 秒；检测到验证后延长到 120 秒并显示 WebView；页面模型兜底 22 秒；图文额外 10 秒；自动展开页面在页面完成后 8 秒、加载中 15 秒触发。
 
 ## 下载链路
 
@@ -41,7 +43,7 @@ DownloadRequest (Aweme + kind + gear + options)
   → DownloadService（前台服务，2 并发）
       → DownloadEngine
           ├─ 视频：gear.urls → playApi → 必要时 defaultUrls
-          ├─ 图片：urls → 可选 downloadUrls（水印兜底）；支持 skipMediaKeys 跳过已存在项
+          ├─ 图片：urls → 可选 downloadUrls（水印兜底）；imageIndexes 限定部分图片，skipMediaKeys 跳过已存在项
           ├─ LivePhoto：urls → playApi → 可选 downloadUrls
           ├─ BGM：music.play_url 直链 → 失败时下载视频并 remux 音轨
           └─ ZIP：媒体 + info.json
@@ -61,6 +63,9 @@ DownloadRequest (Aweme + kind + gear + options)
 - 下载管理支持按作品/文件级删除。删除本地文件使用 MediaStore（旧系统回退到文件路径 + MediaScanner），只有文件删除成功才移除对应记录；也可只删记录保留文件。
 - `DownloadProgressTracker` 用 `baseBytes`（已完成项）+ `currentBytes`（当前项）聚合成单调递增的总字节数；`maxBytes` 保证不会因多次回调重复累计，`total` 至少等于已下载字节，避免 UI 出现“已下载大于总量”。UI 还通过 `DownloadProgress.displayBytes` 做最终上限保护。
 - 下载页把任务聚合为 `DownloadGroup` 后，在内存中按 DataStore 的排序模式排序；合集成员关系独立存储在 Room，筛选时按 `awemeId → collectionId` 映射过滤作品组。删除合集只清除成员关系。
+- `DownloadFeed` 在排序后按日期/首字符/大小区间/文件数区间生成分组标题，同时应用搜索（标题/作者/标签/合集/ID/BGM）和日期筛选；`LibraryFeed` 使用同样思路，最近排序优先使用最近下载时间，未下载记录回退解析时间。
+- 列表性能：历史快照和下载任务在 `Dispatchers.Default` 解码；`LazyColumn`/`LazyVerticalGrid` 使用稳定 key 与 contentType；滚动期间新出现卡片的封面延迟到停止滚动后加载；封面固定请求尺寸，视频封面优先远程、失败回退本地帧。
+- 滚动进度由独立的 `ScrollProgressOverlay` 读取列表状态，避免滚动帧触发整个页面重组。发布构建启用 R8 + 资源压缩，并使用与历史安装包相同的 debug 签名以便个人覆盖升级。
 
 ## 数据
 
@@ -75,6 +80,7 @@ DataStore：
 - 默认清晰度（0 = 最高清晰度）、优先 H.264、LivePhoto/BGM/ZIP 默认项、剪贴板识别、下载页网格/列表、下载页排序模式、主题/动态色、历史保留天数、免责声明状态
 
 下载请求扩展字段：
+- `imageIndexes`：非空时只下载指定的图片列表索引，用于部分图片下载；
 - `skipMediaKeys`：跳过已存在的图片/动图/BGM/ZIP；
 - `replaceFiles`：覆盖模式下待清理的旧文件引用（URI + legacy path）。
 
@@ -97,8 +103,11 @@ DataStore：
 | `SettingsRepository` | DataStore 设置 |
 | `DownloadGroups` / `DownloadGroup` | 下载任务按 aweme_id 聚合、作品封面、媒体元数据与组级进度 |
 | `DownloadSorting` | 六种排序模式、合集/未分类筛选 |
+| `DownloadFeed` / `LibraryFeed` | 搜索、日期筛选、日期/首字符/大小/文件数分组标题 |
+| `ScrollProgressOverlay` / `FeedSectionHeader` | 滚动进度胶囊、分组标题、日期日历 |
 | `DownloadCollectionRepository` / `DownloadCollectionDao` | 合集创建、重命名、删除、作品移动与成员关系 |
 | `DownloadCollections`（UI） | 合集筛选芯片、移动合集面板、管理/命名/删除合集对话框 |
+| `ImageSelectionDialog` | 图文结果页缩略图多选、长按预选、部分下载选项 |
 | `DownloadDuplicates` | 媒体 key、既有内容索引、重复匹配与跳过剩余判断 |
 | `DownloadFileCleaner` | MediaStore/旧路径文件删除、按 URI 清理下载记录 |
 | `DownloadCleanupDialog` | 作品/文件级删除选择、全选、是否删除本地文件 |
@@ -113,6 +122,6 @@ DataStore：
 
 - `ParseActivity` 通过 `configChanges` 避免旋转重建 WebView；Activity 销毁时释放。
 - 解析只在 App 前台进行；下载在 `DownloadService` 中继续，Activity 可离开。
-- WebView 回调在主线程；Room/下载在 IO；UI 通过 StateFlow 观察。
+- WebView 回调在主线程；Room/下载在 IO；UI 通过 StateFlow 观察。资料库与下载页的 Room JSON 解码、下载任务重建、分组构建和 feed 排序在 `Dispatchers.Default` 完成，避免首屏阻塞主线程。
 - 手动 DI（`AppContainer`）避免 Hilt 构建复杂度；所有依赖从 `Application` 或 `Context.appContainer` 获取。
 - `MainScreen` 保留已访问标签页的 Composition（未显示页面跳过测量与绘制），切换时只做约 180 ms 的 alpha/位移过渡，不重建页面；剪贴板监听提升到 `MainScreen` 生命周期，避免切标签重复注册和重复解析。`MainActivity` 的结果页和资料库详情页都以覆盖层呈现，底层页面保持存活，系统返回键由对应层级消费。

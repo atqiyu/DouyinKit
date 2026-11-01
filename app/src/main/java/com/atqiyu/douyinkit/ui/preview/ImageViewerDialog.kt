@@ -129,7 +129,6 @@ fun ImageViewerDialog(
     if (playingUrl != null) {
         VideoPreviewDialog(
             url = playingUrl,
-            title = "LivePhoto 动图",
             onDismiss = { livePhotoUrl = null },
         )
     }

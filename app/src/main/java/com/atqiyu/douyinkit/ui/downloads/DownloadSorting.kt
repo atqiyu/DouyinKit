@@ -14,6 +14,16 @@ val DownloadSortMode.label: String
         DownloadSortMode.AUTHOR -> "按作者昵称"
     }
 
+val DownloadSortMode.shortLabel: String
+    get() = when (this) {
+        DownloadSortMode.LATEST -> "最近"
+        DownloadSortMode.OLDEST -> "最早"
+        DownloadSortMode.LARGEST -> "最大"
+        DownloadSortMode.MOST_FILES -> "最多"
+        DownloadSortMode.TITLE -> "标题"
+        DownloadSortMode.AUTHOR -> "作者"
+    }
+
 fun sortDownloadGroups(
     groups: List<DownloadGroup>,
     mode: DownloadSortMode,

@@ -61,22 +61,51 @@ data class PageState(
     val text: String = "",
     val detailIds: List<String> = emptyList(),
     val bridge: String = "",
+    val challenge: Boolean = false,
+    val challengeReason: String = "",
 ) {
     val looksLikeChallenge: Boolean
         get() {
+            if (challenge) return true
             val lower = (text + " " + title + " " + href).lowercase()
-            if (lower.contains("captcha") || lower.contains("verify") || lower.contains("验证码")) {
-                return true
-            }
-            if (text.contains("安全验证") ||
-                text.contains("请完成验证") ||
-                text.contains("抱歉出错了") ||
-                text.contains("请尝试在抖音内观看")
-            ) {
-                return true
-            }
+            if (CHALLENGE_URL_HINTS.any { lower.contains(it) }) return true
+            if (CHALLENGE_TEXT_HINTS.any { text.contains(it) || title.contains(it) }) return true
             return !hasRoot && bodyLength in 1..20_000
         }
+
+    companion object {
+        private val CHALLENGE_URL_HINTS = listOf(
+            "captcha",
+            "verify",
+            "challenge",
+            "secsdk",
+            "security-check",
+            "passport",
+            "login",
+        )
+        private val CHALLENGE_TEXT_HINTS = listOf(
+            "安全验证",
+            "安全校验",
+            "请完成验证",
+            "完成验证",
+            "验证码",
+            "拖动滑块",
+            "滑动验证",
+            "滑块验证",
+            "人机验证",
+            "访问过于频繁",
+            "操作频繁",
+            "网络环境异常",
+            "系统繁忙",
+            "请稍后再试",
+            "验证失败",
+            "验证已过期",
+            "抱歉出错了",
+            "请尝试在抖音内观看",
+            "请登录后查看",
+            "登录后继续",
+        )
+    }
 }
 
 sealed interface ParserEvent {
@@ -319,8 +348,11 @@ class DouyinWebViewEngine(private val activity: Activity) {
                 if (uri.scheme == null) return true
                 if (uri.scheme == "about") return false
                 if (uri.scheme != "https" && uri.scheme != "http") return true
+                // Captcha/login Iframes and popups are often hosted outside douyin.com.
+                // Allow HTTPS subframe navigation so the verification UI can render.
+                if (!request.isForMainFrame) return false
                 val host = uri.host.orEmpty()
-                return !LinkExtractor.isDouyinHost(host)
+                return !isAllowedMainFrameHost(host)
             }
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -328,6 +360,18 @@ class DouyinWebViewEngine(private val activity: Activity) {
                 started.set(true)
                 lastLoadedUrl = url.orEmpty()
                 _events.tryEmit(ParserEvent.PageStarted(url.orEmpty()))
+                if (isVerificationNavigation(url.orEmpty())) {
+                    _events.tryEmit(
+                        ParserEvent.PageReady(
+                            PageState(
+                                href = url.orEmpty(),
+                                readyState = "loading",
+                                challenge = true,
+                                challengeReason = "navigation",
+                            ),
+                        ),
+                    )
+                }
                 if (!documentStartSupported && view != null && !url.isNullOrBlank() && url != "about:blank") {
                     view.evaluateJavascript(injectionScript, null)
                 }
@@ -336,6 +380,17 @@ class DouyinWebViewEngine(private val activity: Activity) {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 if (view == null) return
+                if (isVerificationNavigation(url.orEmpty())) {
+                    val state = PageState(
+                        href = url.orEmpty(),
+                        readyState = "complete",
+                        challenge = true,
+                        challengeReason = "navigation",
+                    )
+                    lastPageState = state
+                    _events.tryEmit(ParserEvent.PageReady(state))
+                    return
+                }
                 if (!documentStartSupported) {
                     view.evaluateJavascript(injectionScript, null)
                 }
@@ -481,6 +536,17 @@ class DouyinWebViewEngine(private val activity: Activity) {
         }
     }
 
+    private fun isAllowedMainFrameHost(host: String): Boolean {
+        val lower = host.lowercase()
+        if (LinkExtractor.isDouyinHost(lower)) return true
+        return TRUSTED_NAVIGATION_SUFFIXES.any { lower == it || lower.endsWith(".$it") }
+    }
+
+    private fun isVerificationNavigation(url: String): Boolean {
+        val lower = url.lowercase()
+        return VERIFICATION_NAVIGATION_HINTS.any { lower.contains(it) }
+    }
+
     private fun parsePageState(raw: String?): PageState {
         if (raw.isNullOrBlank() || raw == "null") return PageState()
         return runCatching {
@@ -499,6 +565,8 @@ class DouyinWebViewEngine(private val activity: Activity) {
                     }
                 },
                 bridge = obj.optString("bridge"),
+                challenge = obj.optBoolean("challenge"),
+                challengeReason = obj.optString("challengeReason"),
             )
         }.getOrElse { PageState() }
     }
@@ -535,6 +603,24 @@ class DouyinWebViewEngine(private val activity: Activity) {
             "https://iesdouyin.com",
             "https://*.iesdouyin.com",
             "https://www.iesdouyin.com",
+        )
+        val TRUSTED_NAVIGATION_SUFFIXES = listOf(
+            "bytedance.com",
+            "zijieapi.com",
+            "bytegoofy.com",
+            "bytescm.com",
+            "snssdk.com",
+            "bytecdn.cn",
+        )
+        val VERIFICATION_NAVIGATION_HINTS = listOf(
+            "captcha",
+            "verify",
+            "challenge",
+            "secsdk",
+            "security-check",
+            "passport",
+            "/login",
+            "login?",
         )
     }
 }

@@ -117,9 +117,14 @@ class DownloadEngine(
         val savedFiles = mutableListOf<SavedFile>()
         val zipEntries = mutableListOf<ZipEntrySource>()
         val folder = DownloadNaming.imageFolder(aweme)
+        val selectedIndexes = request.imageIndexes
+            ?.let { wanted -> aweme.images.indices.filter { it in wanted }.toSet() }
+            ?: aweme.images.indices.toSet()
         val imageFlags = aweme.images.mapIndexed { index, image ->
-            val downloadImage = DownloadMediaKeys.image(index) !in skipKeys
-            val downloadLive = request.includeLivePhotos &&
+            val selected = index in selectedIndexes
+            val downloadImage = selected && DownloadMediaKeys.image(index) !in skipKeys
+            val downloadLive = selected &&
+                request.includeLivePhotos &&
                 image.isLivePhoto &&
                 image.livePhoto != null &&
                 DownloadMediaKeys.live(index) !in skipKeys

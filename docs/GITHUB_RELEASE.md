@@ -3,9 +3,9 @@
 已发布版本：
 
 - 仓库：<https://github.com/atqiyu/DouyinKit>
-- 最新 Release：<https://github.com/atqiyu/DouyinKit/releases/tag/v1.3.0>
-- 最新 APK：`DouyinKit-v1.3.0-debug.apk`（26,234,854 字节）
-- 最新资产 SHA-256：`2146e38aa14b9aa4eb39fd3e07b78b4d445a0fd2c4706f17c11bf77739076fff`
+- 最新 Release：<https://github.com/atqiyu/DouyinKit/releases/tag/v1.4.0>
+- 最新 APK：`DouyinKit-v1.4.0.apk`（3,353,639 字节，R8 优化构建）
+- 最新资产 SHA-256：`beea9b84e84ab07c140d3ac3dde42b013d93579d20b6f1430575edb9c33690d5`
 - 首个 Release：<https://github.com/atqiyu/DouyinKit/releases/tag/v1.2.0>
 - 可见性：Public；默认分支：`main`；许可证：MIT
 - 已设置仓库描述和 9 个 Topics
@@ -13,9 +13,10 @@
 ## 当前本地状态
 
 - 分支：`main`
-- 当前版本：`v1.3.0`
-- Release 说明：[RELEASE_NOTES_v1.3.0.md](../RELEASE_NOTES_v1.3.0.md)
-- APK 产物：`dist/DouyinKit-v1.3.0-debug.apk`（已在 `.gitignore` 中忽略，不会提交进源码）
+- 当前版本：`v1.4.0`
+- Release 说明：[RELEASE_NOTES_v1.4.0.md](../RELEASE_NOTES_v1.4.0.md)
+- APK 产物：`dist/DouyinKit-v1.4.0.apk`（已在 `.gitignore` 中忽略，不会提交进源码）
+- 签名：release 构建使用标准 debug keystore，便于从 1.3.0 覆盖升级；公开分发前应换成私有 release keystore
 - 许可证：[MIT](../LICENSE)
 
 ## 仓库信息
@@ -26,7 +27,7 @@
 - 默认分支：`main`
 - 描述：
 
-  > DouyinKit：纯本地 WebView 解析的 Android 抖音作品下载工具，支持视频/图文/LivePhoto/BGM、作品预览、下载记录管理、排序与合集分类。个人使用，MIT 开源。
+  > DouyinKit：纯本地 WebView 解析的 Android 抖音作品下载工具，支持视频/图文/LivePhoto/BGM、部分图片下载、作品预览、搜索/日期筛选、排序与合集分类。个人使用，MIT 开源。
 
 - Topics：
 
@@ -41,23 +42,23 @@
 gh auth status
 
 # 2. 构建、测试并提交
-./gradlew assembleDebug testDebugUnitTest lintDebug
+./gradlew assembleRelease testDebugUnitTest lintDebug
 git add .
 git commit -m "feat: ..."
 git push origin main
 
 # 3. 复制 APK 到 dist，计算校验和
 mkdir -p dist
-cp app/build/outputs/apk/debug/app-debug.apk dist/DouyinKit-v1.3.0-debug.apk
-sha256sum dist/DouyinKit-v1.3.0-debug.apk
-# 把大小和 SHA-256 写入 RELEASE_NOTES_v1.3.0.md
+cp app/build/outputs/apk/release/app-release.apk dist/DouyinKit-v1.4.0.apk
+sha256sum dist/DouyinKit-v1.4.0.apk
+# 把大小和 SHA-256 写入 RELEASE_NOTES_v1.4.0.md
 
 # 4. 打标签、推送并发布 Release
-git tag v1.3.0
-git push origin v1.3.0
-gh release create v1.3.0 "dist/DouyinKit-v1.3.0-debug.apk" \
-  --title "DouyinKit v1.3.0" \
-  --notes-file RELEASE_NOTES_v1.3.0.md
+git tag v1.4.0
+git push origin v1.4.0
+gh release create v1.4.0 "dist/DouyinKit-v1.4.0.apk" \
+  --title "DouyinKit v1.4.0" \
+  --notes-file RELEASE_NOTES_v1.4.0.md
 ```
 
 如果从零重建仓库（仅作参考，当前仓库已完成）：
@@ -81,14 +82,14 @@ gh repo edit atqiyu/DouyinKit \
 ```bash
 git remote add origin https://github.com/atqiyu/DouyinKit.git
 git push -u origin main
-git push origin v1.3.0
+git push origin v1.4.0
 ```
 
 首次 push 如果自动弹出 Git Credential Manager，登录并授权即可。
 
-5. 进入仓库 **Releases → Draft a new release**，选择标签 `v1.3.0`。
-6. 标题填 `DouyinKit v1.3.0`，描述粘贴 `RELEASE_NOTES_v1.3.0.md` 的内容。
-7. 上传 `dist/DouyinKit-v1.3.0-debug.apk`，点击 Publish release。
+5. 进入仓库 **Releases → Draft a new release**，选择标签 `v1.4.0`。
+6. 标题填 `DouyinKit v1.4.0`，描述粘贴 `RELEASE_NOTES_v1.4.0.md` 的内容。
+7. 上传 `dist/DouyinKit-v1.4.0.apk`，点击 Publish release。
 
 ## 发布包说明
 
@@ -103,6 +104,6 @@ git push origin v1.3.0
 
 - 仓库 About 区域显示描述、Topics 和 MIT License
 - `main` 上有完整提交历史
-- `v1.3.0` 标签存在，且指向包含发布说明的提交
-- Releases 页面有 v1.3.0 和 APK 资产，资产大小/SHA-256 与发布说明一致
+- `v1.4.0` 标签存在，且指向包含发布说明的提交
+- Releases 页面有 v1.4.0 和 APK 资产，资产大小/SHA-256 与发布说明一致
 - App 的“设置 → 关于”中的版本、GitHub 仓库与许可证链接可打开

@@ -9,6 +9,7 @@ import com.atqiyu.douyinkit.download.DownloadStatus
 import com.atqiyu.douyinkit.download.DownloadTask
 import com.atqiyu.douyinkit.download.SavedFile
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -21,6 +22,11 @@ class DownloadHistoryRepository(
     },
 ) {
     fun observeAll(): Flow<List<DownloadHistoryEntity>> = dao.observeAll()
+
+    fun observeLatestDownloadTimes(): Flow<Map<String, Long>> =
+        dao.observeLatestDownloadTimes().map { rows ->
+            rows.associate { it.awemeId to it.latestAt }
+        }
 
     suspend fun allTasks(): List<DownloadTask> = dao.getAll().mapNotNull { toTask(it) }
 

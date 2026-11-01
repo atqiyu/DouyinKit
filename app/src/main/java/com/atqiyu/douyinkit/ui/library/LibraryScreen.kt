@@ -19,62 +19,77 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import com.atqiyu.douyinkit.core.model.Aweme
 import com.atqiyu.douyinkit.core.model.AwemeKind
 import com.atqiyu.douyinkit.data.db.AwemeEntity
 import com.atqiyu.douyinkit.di.appContainer
+import com.atqiyu.douyinkit.ui.components.FeedSectionHeader
+import com.atqiyu.douyinkit.ui.components.ScrollProgressOverlay
 import com.atqiyu.douyinkit.ui.theme.BrandCyan
 import com.atqiyu.douyinkit.ui.theme.BrandPink
 import java.text.SimpleDateFormat
+import java.time.LocalDate
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-
-private enum class LibraryFilter(val label: String) {
-    ALL("全部"),
-    VIDEO("视频"),
-    IMAGES("图文"),
-    FAVORITE("收藏"),
-}
+import kotlinx.coroutines.withContext
 
 @Composable
 fun LibraryScreen(
@@ -82,213 +97,442 @@ fun LibraryScreen(
 ) {
     val context = LocalContext.current
     val repository = context.appContainer.historyRepository
+    val downloadHistoryRepository = context.appContainer.downloadHistoryRepository
     val scope = rememberCoroutineScope()
     val entities by repository.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    val downloadTimes by downloadHistoryRepository.observeLatestDownloadTimes()
+        .collectAsStateWithLifecycle(initialValue = emptyMap())
+
     var query by rememberSaveable { mutableStateOf("") }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
     var filterIndex by rememberSaveable { mutableIntStateOf(0) }
     var selectedTag by rememberSaveable { mutableStateOf<String?>(null) }
+    var sortIndex by rememberSaveable { mutableIntStateOf(0) }
     var pendingDelete by remember { mutableStateOf<AwemeEntity?>(null) }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showBulkDeleteDialog by remember { mutableStateOf(false) }
+    var sortMenuOpen by remember { mutableStateOf(false) }
     val filter = LibraryFilter.entries[filterIndex]
+    val sortMode = LibrarySortMode.entries[sortIndex]
 
-    val decoded = remember(entities) {
-        entities.mapNotNull { entity ->
-            repository.decode(entity)?.let { entity to it }
-        }
-    }
-    val allTags = remember(entities) {
-        entities.flatMap { repository.tagsOf(it) }.distinct().take(24)
-    }
-    val filtered = remember(decoded, query, filter, selectedTag) {
-        decoded.filter { (entity, aweme) ->
-            val matchesQuery = query.isBlank() ||
-                aweme.displayTitle.contains(query, ignoreCase = true) ||
-                aweme.author.displayName.contains(query, ignoreCase = true) ||
-                aweme.desc.contains(query, ignoreCase = true) ||
-                entity.tags.contains(query, ignoreCase = true)
-            val matchesFilter = when (filter) {
-                LibraryFilter.ALL -> true
-                LibraryFilter.VIDEO -> aweme.kind == AwemeKind.VIDEO
-                LibraryFilter.IMAGES -> aweme.kind == AwemeKind.IMAGES
-                LibraryFilter.FAVORITE -> entity.isFavorite
-            }
-            val matchesTag = selectedTag == null || selectedTag in repository.tagsOf(entity)
-            matchesQuery && matchesFilter && matchesTag
-        }
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    val decodedState by produceState<List<Pair<AwemeEntity, Aweme>>?>(
+        initialValue = null,
+        entities,
     ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (selectionMode) "已选 ${selectedIds.size} 项" else "资料库",
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = if (selectionMode) {
-                            "点击作品可多选"
-                        } else {
-                            "${entities.size} 条解析记录 · 收藏 ${entities.count { it.isFavorite }}"
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (selectionMode) {
-                    val allFilteredSelected = filtered.isNotEmpty() &&
-                        filtered.all { it.first.awemeId in selectedIds }
-                    TextButton(
-                        onClick = {
-                            selectedIds = if (allFilteredSelected) {
-                                emptySet()
-                            } else {
-                                filtered.map { it.first.awemeId }.toSet()
-                            }
-                        },
-                        enabled = filtered.isNotEmpty(),
-                    ) {
-                        Text(if (allFilteredSelected) "取消全选" else "全选")
-                    }
-                    TextButton(
-                        onClick = { showBulkDeleteDialog = true },
-                        enabled = selectedIds.isNotEmpty(),
-                    ) {
-                        Text("删除")
-                    }
-                    TextButton(
-                        onClick = {
-                            selectionMode = false
-                            selectedIds = emptySet()
-                        },
-                    ) {
-                        Text("取消")
-                    }
-                } else {
-                    TextButton(
-                        onClick = { selectionMode = true },
-                        enabled = entities.isNotEmpty(),
-                    ) {
-                        Text("选择")
-                    }
-                }
+        value = withContext(Dispatchers.Default) {
+            entities.mapNotNull { entity ->
+                repository.decode(entity)?.let { aweme -> entity to aweme }
             }
         }
-
-        item {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("搜索标题、作者或标签") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                singleLine = true,
-                shape = MaterialTheme.shapes.large,
+    }
+    val entries = remember(decodedState, downloadTimes) {
+        decodedState.orEmpty().map { (entity, aweme) ->
+            val downloadedAt = downloadTimes[entity.awemeId]
+            LibraryEntry(
+                entity = entity,
+                aweme = aweme,
+                tags = repository.tagsOf(entity),
+                sortMillis = downloadedAt ?: entity.parsedAt,
+                downloadedAt = downloadedAt,
             )
         }
+    }
+    val loading = decodedState == null && entities.isNotEmpty()
+    val allTags = remember(entries) {
+        entries.flatMap { it.tags }.distinct().take(24)
+    }
+    val filtered = remember(entries, query, filter, selectedTag) {
+        filterLibraryEntries(entries, query, filter, selectedTag)
+    }
+    val today = remember { LocalDate.now() }
+    val feed = remember(filtered, sortMode, today) {
+        buildLibraryFeed(filtered, sortMode, today)
+    }
 
-        item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(LibraryFilter.entries, key = { it.name }) { item ->
-                    val index = item.ordinal
-                    FilterChip(
-                        selected = filterIndex == index,
-                        onClick = { filterIndex = index },
-                        label = {
-                            Text(
-                                text = item.label,
-                                style = MaterialTheme.typography.labelMedium,
-                            )
-                        },
-                        modifier = Modifier.height(34.dp),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = BrandPink.copy(alpha = 0.16f),
-                            selectedLabelColor = BrandPink,
-                        ),
-                    )
-                }
-                if (allTags.isNotEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 2.dp)
-                                .width(1.dp)
-                                .height(24.dp)
-                                .background(MaterialTheme.colorScheme.outlineVariant),
-                        )
-                    }
-                    items(allTags, key = { it }) { tag ->
-                        FilterChip(
-                            selected = selectedTag == tag,
-                            onClick = {
-                                selectedTag = if (selectedTag == tag) null else tag
-                            },
-                            label = {
-                                Text(
-                                    text = tag,
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                            },
-                            modifier = Modifier.height(34.dp),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = BrandCyan.copy(alpha = 0.16f),
-                                selectedLabelColor = MaterialTheme.colorScheme.secondary,
-                            ),
-                        )
-                    }
-                }
+    val listState = rememberLazyListState()
+    var loadImages by remember { mutableStateOf(true) }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collectLatest { scrolling ->
+            if (scrolling) {
+                loadImages = false
+            } else {
+                delay(350)
+                loadImages = true
             }
         }
-
-        if (filtered.isEmpty()) {
-            item {
-                EmptyLibrary(hasHistory = entities.isNotEmpty())
-            }
+    }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val searchFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(searchOpen) {
+        if (searchOpen) {
+            delay(80)
+            searchFocusRequester.requestFocus()
+            keyboardController?.show()
         } else {
-            items(filtered, key = { it.first.awemeId }) { (entity, aweme) ->
-                LibraryCard(
-                    entity = entity,
-                    aweme = aweme,
-                    tags = repository.tagsOf(entity),
-                    selectionMode = selectionMode,
-                    selected = entity.awemeId in selectedIds,
-                    onClick = {
-                        if (selectionMode) {
-                            selectedIds = if (entity.awemeId in selectedIds) {
-                                selectedIds - entity.awemeId
-                            } else {
-                                selectedIds + entity.awemeId
+            keyboardController?.hide()
+        }
+    }
+
+    fun closeSearch() {
+        searchOpen = false
+        query = ""
+        keyboardController?.hide()
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            item(key = "library_header") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (searchOpen && !selectionMode) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedTextField(
+                                value = query,
+                                onValueChange = { query = it },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(searchFocusRequester),
+                                placeholder = {
+                                    Text(
+                                        text = "搜索标题、作者或标签",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Search, contentDescription = null)
+                                },
+                                trailingIcon = if (query.isNotEmpty()) {
+                                    {
+                                        IconButton(onClick = { query = "" }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "清空搜索",
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    null
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(26.dp),
+                            )
+                            TextButton(onClick = ::closeSearch) {
+                                Text("取消")
                             }
-                        } else {
-                            onOpen(aweme)
                         }
-                    },
-                    onToggleSelected = {
-                        selectedIds = if (entity.awemeId in selectedIds) {
-                            selectedIds - entity.awemeId
-                        } else {
-                            selectedIds + entity.awemeId
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (selectionMode) {
+                                        "已选 ${selectedIds.size} 项"
+                                    } else {
+                                        "资料库"
+                                    },
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    text = when {
+                                        selectionMode -> "点击作品可多选"
+                                        loading -> "正在整理解析记录…"
+                                        query.isNotBlank() ||
+                                            filter != LibraryFilter.ALL ||
+                                            selectedTag != null ->
+                                            "找到 ${filtered.size} 条记录"
+
+                                        else -> "${entities.size} 条解析记录 · " +
+                                            "收藏 ${entities.count { it.isFavorite }}"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            if (selectionMode) {
+                                val allFilteredSelected = filtered.isNotEmpty() &&
+                                    filtered.all { it.entity.awemeId in selectedIds }
+                                TextButton(
+                                    onClick = {
+                                        selectedIds = if (allFilteredSelected) {
+                                            emptySet()
+                                        } else {
+                                            filtered.map { it.entity.awemeId }.toSet()
+                                        }
+                                    },
+                                    enabled = filtered.isNotEmpty(),
+                                ) {
+                                    Text(if (allFilteredSelected) "取消全选" else "全选")
+                                }
+                                TextButton(
+                                    onClick = { showBulkDeleteDialog = true },
+                                    enabled = selectedIds.isNotEmpty(),
+                                ) {
+                                    Text("删除")
+                                }
+                                TextButton(
+                                    onClick = {
+                                        selectionMode = false
+                                        selectedIds = emptySet()
+                                    },
+                                ) {
+                                    Text("取消")
+                                }
+                            } else {
+                                IconButton(onClick = { searchOpen = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "搜索资料库",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        selectionMode = true
+                                        searchOpen = false
+                                    },
+                                    enabled = entities.isNotEmpty(),
+                                ) {
+                                    Text("选择")
+                                }
+                            }
                         }
-                    },
-                    onToggleFavorite = {
-                        scope.launch {
-                            repository.setFavorite(entity.awemeId, !entity.isFavorite)
+                    }
+
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(LibraryFilter.entries, key = { it.name }) { item ->
+                            val index = item.ordinal
+                            FilterChip(
+                                selected = filterIndex == index,
+                                onClick = { filterIndex = index },
+                                label = {
+                                    Text(
+                                        text = item.label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                },
+                                modifier = Modifier.height(34.dp),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = BrandPink.copy(alpha = 0.16f),
+                                    selectedLabelColor = BrandPink,
+                                ),
+                            )
                         }
-                    },
-                    onDelete = { pendingDelete = entity },
-                )
+                        item {
+                            Box {
+                                AssistChip(
+                                    onClick = { sortMenuOpen = true },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.Sort,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            text = sortMode.label,
+                                            style = MaterialTheme.typography.labelMedium,
+                                        )
+                                    },
+                                    modifier = Modifier.height(34.dp),
+                                )
+                                DropdownMenu(
+                                    expanded = sortMenuOpen,
+                                    onDismissRequest = { sortMenuOpen = false },
+                                ) {
+                                    LibrarySortMode.entries.forEach { mode ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(mode.label)
+                                                    Text(
+                                                        text = mode.caption,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            },
+                                            trailingIcon = {
+                                                if (sortMode == mode) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = null,
+                                                        tint = BrandPink,
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                sortMenuOpen = false
+                                                sortIndex = mode.ordinal
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (allTags.isNotEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(horizontal = 2.dp)
+                                        .width(1.dp)
+                                        .height(24.dp)
+                                        .background(MaterialTheme.colorScheme.outlineVariant),
+                                )
+                            }
+                            items(allTags, key = { it }) { tag ->
+                                FilterChip(
+                                    selected = selectedTag == tag,
+                                    onClick = {
+                                        selectedTag = if (selectedTag == tag) null else tag
+                                    },
+                                    label = {
+                                        Text(
+                                            text = tag,
+                                            style = MaterialTheme.typography.labelMedium,
+                                        )
+                                    },
+                                    modifier = Modifier.height(34.dp),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = BrandCyan.copy(alpha = 0.16f),
+                                        selectedLabelColor = MaterialTheme.colorScheme.secondary,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            when {
+                loading -> {
+                    item(key = "library_loading") {
+                        LoadingLibrary()
+                    }
+                }
+
+                feed.isEmpty() -> {
+                    item(key = "library_empty") {
+                        EmptyLibrary(hasHistory = entities.isNotEmpty())
+                    }
+                }
+
+                else -> {
+                    items(
+                        items = feed,
+                        key = { it.key },
+                        contentType = { item ->
+                            if (item is LibraryFeedItem.Header) "library-section" else "library-entry"
+                        },
+                    ) { item ->
+                        when (item) {
+                            is LibraryFeedItem.Header -> {
+                                FeedSectionHeader(
+                                    title = item.title,
+                                    subtitle = item.subtitle,
+                                    count = item.count,
+                                    modifier = Modifier.padding(horizontal = 2.dp),
+                                )
+                            }
+
+                            is LibraryFeedItem.Entry -> {
+                                val entry = item.item
+                                val downloadedAt = entry.downloadedAt
+                                val timeLabel = remember(downloadedAt, entry.entity.parsedAt) {
+                                    if (downloadedAt != null) {
+                                        "下载 ${formatParsedAt(downloadedAt)}"
+                                    } else {
+                                        "解析 ${formatParsedAt(entry.entity.parsedAt)}"
+                                    }
+                                }
+                                LibraryCard(
+                                    entity = entry.entity,
+                                    aweme = entry.aweme,
+                                    tags = entry.tags,
+                                    timeLabel = timeLabel,
+                                    loadImage = loadImages,
+                                    selectionMode = selectionMode,
+                                    selected = entry.entity.awemeId in selectedIds,
+                                    onClick = {
+                                        if (selectionMode) {
+                                            selectedIds = if (
+                                                entry.entity.awemeId in selectedIds
+                                            ) {
+                                                selectedIds - entry.entity.awemeId
+                                            } else {
+                                                selectedIds + entry.entity.awemeId
+                                            }
+                                        } else {
+                                            onOpen(entry.aweme)
+                                        }
+                                    },
+                                    onToggleSelected = {
+                                        selectedIds = if (entry.entity.awemeId in selectedIds) {
+                                            selectedIds - entry.entity.awemeId
+                                        } else {
+                                            selectedIds + entry.entity.awemeId
+                                        }
+                                    },
+                                    onToggleFavorite = {
+                                        scope.launch {
+                                            repository.setFavorite(
+                                                entry.entity.awemeId,
+                                                !entry.entity.isFavorite,
+                                            )
+                                        }
+                                    },
+                                    onDelete = { pendingDelete = entry.entity },
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
+
+        ScrollProgressOverlay(
+            progressProvider = {
+                val info = listState.layoutInfo
+                val total = info.totalItemsCount
+                if (total <= 1) {
+                    0f
+                } else {
+                    val first = info.visibleItemsInfo.firstOrNull()
+                    val itemFraction = if (first != null && first.size > 0) {
+                        (-first.offset / first.size.toFloat()).coerceIn(0f, 1f)
+                    } else {
+                        0f
+                    }
+                    ((first?.index ?: 0) + itemFraction) / (total - 1)
+                }
+            },
+            canScrollProvider = {
+                val info = listState.layoutInfo
+                val first = info.visibleItemsInfo.firstOrNull()?.index ?: 0
+                val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+                info.totalItemsCount > 0 &&
+                    (first > 0 || last < info.totalItemsCount - 1)
+            },
+            isScrollInProgressProvider = { listState.isScrollInProgress },
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 6.dp),
+        )
     }
 
     pendingDelete?.let { entity ->
@@ -349,6 +593,8 @@ private fun LibraryCard(
     entity: AwemeEntity,
     aweme: Aweme,
     tags: List<String>,
+    timeLabel: String,
+    loadImage: Boolean,
     selectionMode: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
@@ -356,6 +602,23 @@ private fun LibraryCard(
     onToggleFavorite: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val context = LocalContext.current
+    var hasRequestedCover by remember(entity.awemeId) { mutableStateOf(false) }
+    LaunchedEffect(loadImage) {
+        if (loadImage) hasRequestedCover = true
+    }
+    val coverRequest = remember(hasRequestedCover, entity.coverUrl) {
+        if (!hasRequestedCover) {
+            null
+        } else {
+            entity.coverUrl?.let { url ->
+                ImageRequest.Builder(context)
+                    .data(url)
+                    .size(240, 320)
+                    .build()
+            }
+        }
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -385,18 +648,17 @@ private fun LibraryCard(
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                 contentAlignment = Alignment.Center,
             ) {
-                if (entity.coverUrl != null) {
+                Icon(
+                    imageVector = Icons.Default.PhotoLibrary,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (coverRequest != null) {
                     AsyncImage(
-                        model = entity.coverUrl,
+                        model = coverRequest,
                         contentDescription = entity.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.PhotoLibrary,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -410,9 +672,11 @@ private fun LibraryCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = formatParsedAt(entity.parsedAt),
+                        text = timeLabel,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.weight(1f))
                     if (!selectionMode) {
@@ -472,6 +736,42 @@ private fun LibraryCard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoadingLibrary() {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 30.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(24.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            LinearProgressIndicator(
+                modifier = Modifier.width(52.dp),
+                color = BrandPink,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            )
+            Column {
+                Text(
+                    text = "正在加载资料库",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "记录较多时会先在后台解析快照，列表随后出现。",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

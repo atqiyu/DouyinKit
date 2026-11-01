@@ -14,8 +14,8 @@ android {
         applicationId = "com.atqiyu.douyinkit"
         minSdk = 24
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.3.0"
+        versionCode = 5
+        versionName = "1.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
@@ -25,6 +25,10 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
+            // Personal sideload builds are optimized with R8 but signed with the
+            // standard Android debug key so they can update existing installs.
+            // Replace with a private release keystore for public distribution.
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

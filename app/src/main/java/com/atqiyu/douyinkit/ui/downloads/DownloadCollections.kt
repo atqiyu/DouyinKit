@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -54,13 +55,12 @@ import com.atqiyu.douyinkit.data.db.DownloadCollectionEntity
 
 @Composable
 fun CollectionFilterRow(
-    totalCount: Int,
-    uncategorizedCount: Int,
     collections: List<DownloadCollectionEntity>,
     selected: String?,
     onSelect: (String?) -> Unit,
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
+    controls: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
         modifier = modifier
@@ -72,13 +72,14 @@ fun CollectionFilterRow(
         FilterChip(
             selected = selected == null,
             onClick = { onSelect(null) },
-            label = { Text("全部 · $totalCount") },
+            label = { Text("全部") },
         )
         FilterChip(
             selected = selected == UNCATEGORIZED_COLLECTION,
             onClick = { onSelect(UNCATEGORIZED_COLLECTION) },
-            label = { Text("未分类 · $uncategorizedCount") },
+            label = { Text("未分类") },
         )
+        controls()
         collections.forEach { collection ->
             FilterChip(
                 selected = selected == collection.id,

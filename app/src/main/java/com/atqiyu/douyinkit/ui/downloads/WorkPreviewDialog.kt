@@ -153,10 +153,15 @@ fun WorkPreviewDialog(
     var confirmRemove by remember { mutableStateOf(false) }
     var infoVisible by remember(group.awemeId) { mutableStateOf(true) }
     var playingLiveUri by remember(group.awemeId) { mutableStateOf<String?>(null) }
-    val topBarAlpha by animateFloatAsState(
-        targetValue = if (infoVisible) 1f else 0.35f,
+    val topContentAlpha by animateFloatAsState(
+        targetValue = if (infoVisible) 1f else 0f,
         animationSpec = tween(durationMillis = 220),
-        label = "preview-top-bar-alpha",
+        label = "preview-top-content-alpha",
+    )
+    val toggleAlpha by animateFloatAsState(
+        targetValue = if (infoVisible) 0.82f else 0.58f,
+        animationSpec = tween(durationMillis = 220),
+        label = "preview-toggle-alpha",
     )
     val imageBgmItem = group.audioItems.firstOrNull()
     val imageBgmUrl = if (group.aweme.kind == AwemeKind.IMAGES) {
@@ -275,6 +280,7 @@ fun WorkPreviewDialog(
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
                     .height(190.dp)
+                    .alpha(topContentAlpha)
                     .background(
                         Brush.verticalGradient(
                             listOf(Color.Black.copy(alpha = 0.82f), Color.Transparent),
@@ -292,7 +298,10 @@ fun WorkPreviewDialog(
             ) {
                 IconButton(
                     onClick = onDismiss,
-                    modifier = Modifier.background(Color.Black.copy(alpha = 0.3f), CircleShape),
+                    enabled = infoVisible,
+                    modifier = Modifier
+                        .alpha(topContentAlpha)
+                        .background(Color.Black.copy(alpha = 0.3f), CircleShape),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
@@ -303,7 +312,7 @@ fun WorkPreviewDialog(
                 Row(
                     modifier = Modifier
                         .weight(1f)
-                        .alpha(topBarAlpha),
+                        .alpha(topContentAlpha),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -331,20 +340,23 @@ fun WorkPreviewDialog(
                     HeaderAction(
                         icon = Icons.Default.Info,
                         label = "作品与文件详情",
+                        enabled = infoVisible,
                         onClick = { showDetails = true },
                     )
                     HeaderAction(
                         icon = Icons.Default.Share,
                         label = "分享当前文件",
-                        enabled = displayItem != null,
+                        enabled = infoVisible && displayItem != null,
                         onClick = { displayItem?.let { shareSavedFile(context, it.file) } },
                     )
                     HeaderAction(
                         icon = Icons.AutoMirrored.Filled.OpenInNew,
                         label = "打开当前文件",
-                        enabled = displayItem != null,
+                        enabled = infoVisible && displayItem != null,
                         onClick = { displayItem?.let { openSavedFile(context, it.file) } },
                     )
+                }
+                Box(modifier = Modifier.alpha(toggleAlpha)) {
                     HeaderAction(
                         icon = if (infoVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                         label = if (infoVisible) "隐藏作品信息" else "显示作品信息",
@@ -358,12 +370,16 @@ fun WorkPreviewDialog(
             } else {
                 null
             }
-            if (currentLive != null &&
-                playingLiveUri != currentLive.file.uri.toString()
+            AnimatedVisibility(
+                visible = infoVisible &&
+                    currentLive != null &&
+                    playingLiveUri != currentLive.file.uri.toString(),
+                modifier = Modifier.align(Alignment.TopCenter),
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(150)),
             ) {
                 Surface(
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
                         .statusBarsPadding()
                         .padding(top = 98.dp),
                     color = Color.Black.copy(alpha = 0.42f),
@@ -389,10 +405,16 @@ fun WorkPreviewDialog(
                 }
             }
 
-            if (selected?.kind == GroupMediaKind.IMAGE && imagePages.size > 1) {
+            AnimatedVisibility(
+                visible = infoVisible &&
+                    selected?.kind == GroupMediaKind.IMAGE &&
+                    imagePages.size > 1,
+                modifier = Modifier.align(Alignment.TopCenter),
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(150)),
+            ) {
                 Surface(
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
                         .statusBarsPadding()
                         .padding(top = 62.dp),
                     color = Color.Black.copy(alpha = 0.36f),

@@ -208,8 +208,79 @@
     }
   };
 
+  var CHALLENGE_TEXT = [
+    "安全验证", "安全校验", "完成验证", "请完成验证", "请完成以下验证",
+    "验证码", "拖动滑块", "滑动验证", "滑块验证", "人机验证", "行为验证",
+    "访问过于频繁", "操作过于频繁", "操作频繁", "网络环境异常", "环境异常",
+    "系统繁忙", "请稍后再试", "请求过于频繁", "验证失败", "验证已过期",
+    "请登录后查看", "登录后继续"
+  ];
+  var CHALLENGE_URL_HINTS = [
+    "captcha", "verify", "challenge", "secsdk", "security-check", "passport", "login"
+  ];
+  var CHALLENGE_SELECTOR = [
+    "[class*='captcha']", "[id*='captcha']",
+    "[class*='secsdk']", "[id*='secsdk']",
+    "[class*='verify_container']", "[id*='verify_container']",
+    "[class*='verify-wrapper']", "[id*='verify-wrapper']",
+    "[class*='captcha_verify']", "[id*='captcha_verify']",
+    "[class*='verify-slide']", "[id*='verify-slide']"
+  ].join(",");
+
+  function challengeInRoot(root, label) {
+    try {
+      if (!root || typeof root.querySelector !== "function") return "";
+      if (root.querySelector(CHALLENGE_SELECTOR)) return label + ":selector";
+      var iframes = root.querySelectorAll ? root.querySelectorAll("iframe") : [];
+      for (var i = 0; i < iframes.length; i++) {
+        var src = String(iframes[i].src || "").toLowerCase();
+        for (var j = 0; j < CHALLENGE_URL_HINTS.length; j++) {
+          if (src.indexOf(CHALLENGE_URL_HINTS[j]) !== -1) {
+            return label + ":iframe:" + CHALLENGE_URL_HINTS[j];
+          }
+        }
+      }
+    } catch (e) {}
+    return "";
+  }
+
+  function detectChallenge() {
+    try {
+      var href = String(location.href || "").toLowerCase();
+      for (var i = 0; i < CHALLENGE_URL_HINTS.length; i++) {
+        if (href.indexOf(CHALLENGE_URL_HINTS[i]) !== -1) {
+          return "url:" + CHALLENGE_URL_HINTS[i];
+        }
+      }
+      var title = String(document.title || "");
+      var text = document.body && document.body.innerText
+        ? String(document.body.innerText).slice(0, 4000)
+        : "";
+      var haystack = title + "\n" + text;
+      for (var j = 0; j < CHALLENGE_TEXT.length; j++) {
+        if (haystack.indexOf(CHALLENGE_TEXT[j]) !== -1) {
+          return "text:" + CHALLENGE_TEXT[j];
+        }
+      }
+      var reason = challengeInRoot(document, "dom");
+      if (reason) return reason;
+      // Verification widgets can be mounted inside an open shadow root.
+      var all = document.querySelectorAll ? document.querySelectorAll("*") : [];
+      var limit = Math.min(all.length, 2000);
+      for (var k = 0; k < limit; k++) {
+        var host = all[k];
+        if (host && host.shadowRoot) {
+          reason = challengeInRoot(host.shadowRoot, "shadow");
+          if (reason) return reason;
+        }
+      }
+    } catch (e) {}
+    return "";
+  }
+
   window.__DK_getState = function () {
     try {
+      var challengeReason = detectChallenge();
       return JSON.stringify({
         href: cleanUrl(location.href),
         title: document.title || "",
@@ -221,6 +292,8 @@
         detailIds: Object.keys(seen),
         posted: posted,
         bridge: bridgeName,
+        challenge: !!challengeReason,
+        challengeReason: challengeReason,
         at: Date.now()
       });
     } catch (e) {

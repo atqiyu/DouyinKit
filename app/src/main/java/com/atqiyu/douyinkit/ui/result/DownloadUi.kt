@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -140,6 +141,8 @@ private fun startDownloads(
 fun ResultActions(
     aweme: Aweme,
     onMessage: (String) -> Unit,
+    initialImageSelection: Set<Int>? = null,
+    onInitialImageSelectionConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val repository = context.appContainer.downloadHistoryRepository
@@ -149,9 +152,18 @@ fun ResultActions(
     val enqueue = rememberDownloadRequester(onMessage)
     var showQualitySheet by remember { mutableStateOf(false) }
     var showImageOptions by remember { mutableStateOf(false) }
+    var showImagePicker by remember { mutableStateOf(false) }
+    var imagePickerInitial by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var pendingRequests by remember { mutableStateOf<List<DownloadRequest>?>(null) }
     var duplicateCheck by remember { mutableStateOf<com.atqiyu.douyinkit.download.DuplicateCheck?>(null) }
     var checkingDuplicates by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialImageSelection) {
+        val initial = initialImageSelection ?: return@LaunchedEffect
+        imagePickerInitial = initial
+        showImagePicker = true
+        onInitialImageSelectionConsumed()
+    }
 
     fun submit(requests: List<DownloadRequest>) {
         if (requests.isEmpty() || checkingDuplicates) return
@@ -268,12 +280,31 @@ fun ResultActions(
             }
 
             com.atqiyu.douyinkit.core.model.AwemeKind.IMAGES -> {
-                Button(
-                    onClick = { showImageOptions = true },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = aweme.images.any { it.hasDownloadSource },
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("下载全部图片（${aweme.images.size}）")
+                    Button(
+                        onClick = { showImageOptions = true },
+                        modifier = Modifier.weight(1f),
+                        enabled = aweme.images.any { it.hasDownloadSource },
+                    ) {
+                        Text(
+                            text = "下载全部（${aweme.images.size}）",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            imagePickerInitial = emptySet()
+                            showImagePicker = true
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = aweme.images.any { it.hasDownloadSource },
+                    ) {
+                        Text("选择图片")
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -341,6 +372,31 @@ fun ResultActions(
                             includeLivePhotos = includeLive,
                             includeMusic = includeMusic,
                             createZip = createZip,
+                        ),
+                    ),
+                )
+            },
+        )
+    }
+
+    if (showImagePicker) {
+        ImageSelectionDialog(
+            images = aweme.images,
+            initialSelected = imagePickerInitial,
+            defaults = settings,
+            hasMusic = aweme.music != null,
+            onDismiss = { showImagePicker = false },
+            onDownload = { selected, includeLive, includeMusic, createZip ->
+                showImagePicker = false
+                submit(
+                    listOf(
+                        DownloadRequest(
+                            aweme = aweme,
+                            kind = DownloadKind.IMAGES,
+                            includeLivePhotos = includeLive,
+                            includeMusic = includeMusic,
+                            createZip = createZip,
+                            imageIndexes = selected,
                         ),
                     ),
                 )

@@ -541,6 +541,11 @@ private fun DiagnosticsCard(state: ParseUiState) {
                     } else {
                         appendLine("page=${page.href.ifBlank { "-" }}")
                         appendLine("hook=${page.hook} root=${page.hasRoot} body=${page.bodyLength}")
+                        appendLine(
+                            "challenge=${page.challengeReason.ifBlank {
+                                if (page.challenge) "true" else "false"
+                            }}",
+                        )
                         appendLine("bridge=${page.bridge.ifBlank { "-" }}")
                         appendLine("detailIds=${page.detailIds.joinToString(",")}")
                         append("bodyText=${page.text.take(300).replace('\n', ' ')}")

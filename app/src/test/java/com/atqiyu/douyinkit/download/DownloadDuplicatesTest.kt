@@ -49,6 +49,23 @@ class DownloadDuplicatesTest {
     }
 
     @Test
+    fun partialImageSelectionExposesOnlySelectedImageKeys() {
+        val keys = imageRequest()
+            .copy(
+                imageIndexes = setOf(1),
+                includeMusic = false,
+                createZip = false,
+            )
+            .requestedMediaKeys()
+
+        assertFalse(DownloadMediaKeys.image(0) in keys)
+        assertTrue(DownloadMediaKeys.image(1) in keys)
+        assertTrue(DownloadMediaKeys.live(1) in keys)
+        assertFalse(DownloadMediaKeys.MUSIC in keys)
+        assertFalse(DownloadMediaKeys.ZIP in keys)
+    }
+
+    @Test
     fun skipLeavesOnlyMissingImageContent() {
         val allKeys = imageRequest().requestedMediaKeys()
         assertFalse(imageRequest().hasContentAfterSkip(allKeys))

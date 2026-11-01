@@ -99,6 +99,8 @@ data class DownloadRequest(
     val includeMusic: Boolean = true,
     val createZip: Boolean = false,
     val allowWatermarkedFallback: Boolean = false,
+    /** null downloads every image; otherwise only these zero-based list indexes. */
+    val imageIndexes: Set<Int>? = null,
     val skipMediaKeys: Set<String> = emptySet(),
     val replaceFiles: List<SavedFileRef> = emptyList(),
 )

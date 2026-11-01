@@ -1,8 +1,10 @@
 package com.atqiyu.douyinkit.ui.result
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -145,6 +148,7 @@ private fun ResultCard(
     var showVideoPreview by remember { mutableStateOf(false) }
     var showImageViewer by remember { mutableStateOf(false) }
     var imageViewerIndex by remember { mutableStateOf(0) }
+    var imagePickerInitial by remember { mutableStateOf<Set<Int>?>(null) }
     val previewUrl = remember(aweme) {
         val selected = VideoGearSelector.select(aweme)
         selected?.urls?.firstOrNull()
@@ -281,14 +285,25 @@ private fun ResultCard(
 
             when (aweme.kind) {
                 AwemeKind.VIDEO -> VideoSection(aweme)
-                AwemeKind.IMAGES -> ImageSection(aweme) { index ->
-                    imageViewerIndex = index
-                    showImageViewer = true
-                }
+                AwemeKind.IMAGES -> ImageSection(
+                    aweme = aweme,
+                    onImageClick = { index ->
+                        imageViewerIndex = index
+                        showImageViewer = true
+                    },
+                    onImageLongClick = { index ->
+                        imagePickerInitial = setOf(index)
+                    },
+                )
             }
 
             Spacer(Modifier.height(14.dp))
-            ResultActions(aweme = aweme, onMessage = onMessage)
+            ResultActions(
+                aweme = aweme,
+                onMessage = onMessage,
+                initialImageSelection = imagePickerInitial,
+                onInitialImageSelectionConsumed = { imagePickerInitial = null },
+            )
 
             aweme.music?.let { music ->
                 Spacer(Modifier.height(12.dp))
@@ -345,7 +360,6 @@ private fun ResultCard(
     if (showVideoPreview && previewUrl != null) {
         VideoPreviewDialog(
             url = previewUrl,
-            title = aweme.displayTitle,
             onDismiss = { showVideoPreview = false },
         )
     }
@@ -441,10 +455,12 @@ private fun GearRow(gear: VideoGear) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ImageSection(
     aweme: Aweme,
     onImageClick: (Int) -> Unit,
+    onImageLongClick: (Int) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -461,21 +477,33 @@ private fun ImageSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+    Spacer(Modifier.height(3.dp))
+    Text(
+        text = "点击预览 · 长按图片可选择部分下载",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
     Spacer(Modifier.height(8.dp))
     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(aweme.images, key = { it.index }) { image ->
+        itemsIndexed(
+            items = aweme.images,
+            key = { index, _ -> index },
+        ) { index, image ->
             Box(
                 modifier = Modifier
                     .size(width = 92.dp, height = 120.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                    .clickable { onImageClick(image.index) },
+                    .combinedClickable(
+                        onClick = { onImageClick(index) },
+                        onLongClick = { onImageLongClick(index) },
+                    ),
             ) {
                 val url = image.urls.firstOrNull()
                 if (url != null) {
                     AsyncImage(
                         model = url,
-                        contentDescription = "第 ${image.index + 1} 张",
+                        contentDescription = "第 ${index + 1} 张",
                         modifier = Modifier.fillMaxWidth().aspectRatio(0.76f),
                         contentScale = ContentScale.Crop,
                     )
