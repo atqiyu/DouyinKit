@@ -15,6 +15,7 @@ enum class ErrorCode {
     AWEME_ID_MISMATCH,
     NO_MEDIA,
     NEEDS_VERIFICATION,
+    NEEDS_LOGIN,
     NETWORK,
     STORAGE,
     PERMISSION,

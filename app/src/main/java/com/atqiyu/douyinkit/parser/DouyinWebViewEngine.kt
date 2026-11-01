@@ -63,13 +63,25 @@ data class PageState(
     val bridge: String = "",
     val challenge: Boolean = false,
     val challengeReason: String = "",
+    val login: Boolean = false,
+    val loginReason: String = "",
 ) {
+    val loginRequired: Boolean
+        get() {
+            if (login) return true
+            val lowerHref = href.lowercase()
+            if (LOGIN_URL_HINTS.any { lowerHref.contains(it) }) return true
+            return LOGIN_TEXT_HINTS.any { text.contains(it) || title.contains(it) }
+        }
+
     val looksLikeChallenge: Boolean
         get() {
             if (challenge) return true
-            val lower = (text + " " + title + " " + href).lowercase()
-            if (CHALLENGE_URL_HINTS.any { lower.contains(it) }) return true
-            if (CHALLENGE_TEXT_HINTS.any { text.contains(it) || title.contains(it) }) return true
+            val securityText = CHALLENGE_TEXT_HINTS.any { text.contains(it) || title.contains(it) }
+            val challengeUrl = !loginRequired &&
+                CHALLENGE_URL_HINTS.any { href.lowercase().contains(it) }
+            if (challengeUrl || securityText) return true
+            if (loginRequired) return false
             return !hasRoot && bodyLength in 1..20_000
         }
 
@@ -80,18 +92,17 @@ data class PageState(
             "challenge",
             "secsdk",
             "security-check",
-            "passport",
-            "login",
         )
         private val CHALLENGE_TEXT_HINTS = listOf(
             "安全验证",
             "安全校验",
             "请完成验证",
             "完成验证",
-            "验证码",
             "拖动滑块",
             "滑动验证",
             "滑块验证",
+            "拼图验证",
+            "按住滑块",
             "人机验证",
             "访问过于频繁",
             "操作频繁",
@@ -100,10 +111,27 @@ data class PageState(
             "请稍后再试",
             "验证失败",
             "验证已过期",
+            "请完成下方验证",
             "抱歉出错了",
             "请尝试在抖音内观看",
-            "请登录后查看",
+        )
+        private val LOGIN_URL_HINTS = listOf(
+            "/login",
+            "login?",
+            "passport",
+            "/signin",
+            "/sso",
+        )
+        private val LOGIN_TEXT_HINTS = listOf(
+            "登录后免费畅享",
+            "扫码登录",
+            "验证码登录",
+            "密码登录",
             "登录后继续",
+            "请登录后查看",
+            "手机号登录",
+            "一键登录",
+            "登录即代表同意",
         )
     }
 }
@@ -359,18 +387,34 @@ class DouyinWebViewEngine(private val activity: Activity) {
                 super.onPageStarted(view, url, favicon)
                 started.set(true)
                 lastLoadedUrl = url.orEmpty()
-                _events.tryEmit(ParserEvent.PageStarted(url.orEmpty()))
-                if (isVerificationNavigation(url.orEmpty())) {
-                    _events.tryEmit(
-                        ParserEvent.PageReady(
-                            PageState(
-                                href = url.orEmpty(),
-                                readyState = "loading",
-                                challenge = true,
-                                challengeReason = "navigation",
+                val currentUrl = url.orEmpty()
+                _events.tryEmit(ParserEvent.PageStarted(currentUrl))
+                when {
+                    isVerificationNavigation(currentUrl) -> {
+                        _events.tryEmit(
+                            ParserEvent.PageReady(
+                                PageState(
+                                    href = currentUrl,
+                                    readyState = "loading",
+                                    challenge = true,
+                                    challengeReason = "navigation",
+                                ),
                             ),
-                        ),
-                    )
+                        )
+                    }
+
+                    isLoginNavigation(currentUrl) -> {
+                        _events.tryEmit(
+                            ParserEvent.PageReady(
+                                PageState(
+                                    href = currentUrl,
+                                    readyState = "loading",
+                                    login = true,
+                                    loginReason = "navigation",
+                                ),
+                            ),
+                        )
+                    }
                 }
                 if (!documentStartSupported && view != null && !url.isNullOrBlank() && url != "about:blank") {
                     view.evaluateJavascript(injectionScript, null)
@@ -380,12 +424,24 @@ class DouyinWebViewEngine(private val activity: Activity) {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 if (view == null) return
-                if (isVerificationNavigation(url.orEmpty())) {
+                val currentUrl = url.orEmpty()
+                if (isVerificationNavigation(currentUrl)) {
                     val state = PageState(
-                        href = url.orEmpty(),
+                        href = currentUrl,
                         readyState = "complete",
                         challenge = true,
                         challengeReason = "navigation",
+                    )
+                    lastPageState = state
+                    _events.tryEmit(ParserEvent.PageReady(state))
+                    return
+                }
+                if (isLoginNavigation(currentUrl)) {
+                    val state = PageState(
+                        href = currentUrl,
+                        readyState = "complete",
+                        login = true,
+                        loginReason = "navigation",
                     )
                     lastPageState = state
                     _events.tryEmit(ParserEvent.PageReady(state))
@@ -547,6 +603,11 @@ class DouyinWebViewEngine(private val activity: Activity) {
         return VERIFICATION_NAVIGATION_HINTS.any { lower.contains(it) }
     }
 
+    private fun isLoginNavigation(url: String): Boolean {
+        val lower = url.lowercase()
+        return LOGIN_NAVIGATION_HINTS.any { lower.contains(it) }
+    }
+
     private fun parsePageState(raw: String?): PageState {
         if (raw.isNullOrBlank() || raw == "null") return PageState()
         return runCatching {
@@ -567,6 +628,8 @@ class DouyinWebViewEngine(private val activity: Activity) {
                 bridge = obj.optString("bridge"),
                 challenge = obj.optBoolean("challenge"),
                 challengeReason = obj.optString("challengeReason"),
+                login = obj.optBoolean("login"),
+                loginReason = obj.optString("loginReason"),
             )
         }.getOrElse { PageState() }
     }
@@ -618,9 +681,13 @@ class DouyinWebViewEngine(private val activity: Activity) {
             "challenge",
             "secsdk",
             "security-check",
-            "passport",
+        )
+        val LOGIN_NAVIGATION_HINTS = listOf(
             "/login",
             "login?",
+            "passport",
+            "/signin",
+            "/sso",
         )
     }
 }

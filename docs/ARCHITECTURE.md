@@ -27,13 +27,13 @@ Domain / data
 3. `ParseActivity` 创建单个 `DouyinWebViewEngine`，全屏 WebView 位于解析进度层下方，使用桌面 Chrome UA、持久 Cookie、禁用文件访问。
 4. `hook.js` 在 document-start 注入（不支持时退化为 `onPageStarted`），包装 XHR/fetch，只捕获 `/aweme/v1/web/aweme/detail/`。
 5. 详情 JSON 在 JS 侧按白名单裁剪，经 `WebMessageListener` 回传；旧 WebView 用 `@JavascriptInterface` 回退。桥只接受合法 aweme_id、大小受限的 JSON，并校验来源域名。
-6. `hook.js` 的 `__DK_getState` 同时扫描验证码 DOM、验证 iframe（含开放 shadow root）、页面标题/正文关键词和验证 URL，返回 `challenge`/`challengeReason`；`ParseController` 检测到后立即展开 WebView 并延长到 120 秒。
-7. 页面已加载但 8 秒没有详情时自动展开 WebView；页面仍在加载时 15 秒兜底；验证阶段不再被 `/note/` 阶段重置。验证 iframe 和验证/登录主页面域名加入 WebView 导航白名单，避免验证码页面被拦截。
+6. `hook.js` 的 `__DK_getState` 只把可见的验证码 DOM、验证 iframe（含开放 shadow root）、明确的安全验证文案和验证 URL 标记为 `challenge`；登录 URL/文案标记为 `login`。`challenge` 与 `login` 互不混淆，避免把“验证码登录”当成安全验证。
+7. `ParseController` 只在 `challenge` 时自动展开 WebView 并延长到 120 秒；`login` 只更新“需要登录/可手动显示页面”的提示，不自动展开。页面加载超时不再自动展开，验证阶段也不会被 `/note/` 阶段重置。验证 iframe 和登录/验证主页面域名加入 WebView 导航白名单。
 8. `DouyinDetailNormalizer` 宽容解析 snake_case 与 camelCase，生成 `Aweme`：视频档位、封面、作者、统计、图集、LivePhoto、BGM。
 9. 图文作品额外打开 `/note/<id>`，`page_model.js` 遍历 React fiber / SSR 数据，补齐 LivePhoto、fps、codec、playApi；与详情结果按档位名/图片 uri 合并。
 10. 结果保存到 Room，交给 `ParseSessionStore`，`MainActivity` 展示结果页。
 
-超时：总等待 45 秒；检测到验证后延长到 120 秒并显示 WebView；页面模型兜底 22 秒；图文额外 10 秒；自动展开页面在页面完成后 8 秒、加载中 15 秒触发。
+超时：总等待 45 秒；只有检测到安全验证时才延长到 120 秒并显示 WebView；页面模型兜底 22 秒；图文额外 10 秒。登录页不会自动展开。
 
 ## 下载链路
 

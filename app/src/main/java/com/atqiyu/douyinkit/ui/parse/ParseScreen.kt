@@ -407,6 +407,7 @@ private fun ParseFailureOverlay(
 ) {
     val failure = state.failures.lastOrNull()
     val needsVerification = failure?.code == com.atqiyu.douyinkit.core.model.ErrorCode.NEEDS_VERIFICATION
+    val needsLogin = failure?.code == com.atqiyu.douyinkit.core.model.ErrorCode.NEEDS_LOGIN
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -470,7 +471,15 @@ private fun ParseFailureOverlay(
                         containerColor = if (needsVerification) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary,
                     ),
                 ) {
-                    Text(if (needsVerification) "验证后重试" else "重试")
+                    Text(
+                        if (needsVerification) {
+                            "验证后重试"
+                        } else if (needsLogin) {
+                            "重新解析"
+                        } else {
+                            "重试"
+                        },
+                    )
                 }
                 OutlinedButton(
                     onClick = onShowWebView,
@@ -544,6 +553,11 @@ private fun DiagnosticsCard(state: ParseUiState) {
                         appendLine(
                             "challenge=${page.challengeReason.ifBlank {
                                 if (page.challenge) "true" else "false"
+                            }}",
+                        )
+                        appendLine(
+                            "login=${page.loginReason.ifBlank {
+                                if (page.login) "true" else "false"
                             }}",
                         )
                         appendLine("bridge=${page.bridge.ifBlank { "-" }}")

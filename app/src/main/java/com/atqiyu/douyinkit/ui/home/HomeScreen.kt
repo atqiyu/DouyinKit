@@ -3,6 +3,8 @@ package com.atqiyu.douyinkit.ui.home
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -10,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,8 +43,6 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -69,6 +70,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -76,14 +78,17 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.atqiyu.douyinkit.R
 import com.atqiyu.douyinkit.core.model.Aweme
 import com.atqiyu.douyinkit.core.model.AwemeKind
 import com.atqiyu.douyinkit.di.appContainer
+import com.atqiyu.douyinkit.ui.components.AppMark
 import com.atqiyu.douyinkit.ui.theme.BrandCyan
 import com.atqiyu.douyinkit.ui.theme.BrandPink
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val SAMPLE_SHARE_TEXT =
@@ -119,6 +124,21 @@ fun HomeScreen(
             input = initialText
         }
     }
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(70)
+        entered = true
+    }
+    val heroAlpha by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = tween(420, easing = FastOutSlowInEasing),
+        label = "home-hero-alpha",
+    )
+    val heroShift by animateFloatAsState(
+        targetValue = if (entered) 0f else 18f,
+        animationSpec = tween(460, easing = FastOutSlowInEasing),
+        label = "home-hero-shift",
+    )
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -132,26 +152,16 @@ fun HomeScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
         ) {
-            Spacer(Modifier.height(16.dp))
-            BrandBar()
-            Spacer(Modifier.height(24.dp))
-
-            Text(
-                text = stringResource(R.string.home_title),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
             Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.home_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            HeroHeader(
+                modifier = Modifier.graphicsLayer {
+                    alpha = heroAlpha
+                    translationY = heroShift
+                },
             )
-            Spacer(Modifier.height(16.dp))
-
-            FeatureChips()
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
+            FeatureCards(visible = entered)
+            Spacer(Modifier.height(10.dp))
 
             AnimatedVisibility(
                 visible = clipboardLink != null,
@@ -179,6 +189,7 @@ fun HomeScreen(
             InputCard(
                 value = input,
                 onValueChange = { input = it },
+                onClear = { input = "" },
                 onPaste = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val pasted = clipboard.primaryClip
@@ -200,7 +211,7 @@ fun HomeScreen(
                 },
             )
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             Button(
                 onClick = {
                     if (input.isBlank()) {
@@ -212,7 +223,7 @@ fun HomeScreen(
                 enabled = input.isNotBlank(),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .height(52.dp),
                 shape = MaterialTheme.shapes.large,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -285,35 +296,76 @@ private fun ClipboardBanner(
 }
 
 @Composable
-private fun BrandBar() {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
+private fun HeroHeader(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        BrandPink.copy(alpha = 0.12f),
+                        BrandCyan.copy(alpha = 0.09f),
+                        MaterialTheme.colorScheme.surfaceContainer,
+                    ),
+                ),
+            )
+            .padding(16.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Brush.linearGradient(listOf(BrandPink, BrandCyan))),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "D",
-                color = MaterialTheme.colorScheme.onPrimary,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Black,
-            )
-        }
-        Spacer(Modifier.width(12.dp))
         Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AppMark(size = 46.dp, glow = true)
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.app_name),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = stringResource(R.string.app_tagline),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
+                    shape = CircleShape,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(5.dp)
+                                .background(BrandCyan, CircleShape),
+                        )
+                        Text(
+                            text = "纯本地",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
             Text(
-                text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.titleLarge,
+                text = stringResource(R.string.home_title),
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
+            Spacer(Modifier.height(4.dp))
             Text(
-                text = stringResource(R.string.app_tagline),
-                style = MaterialTheme.typography.labelMedium,
+                text = stringResource(R.string.home_subtitle),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -321,47 +373,131 @@ private fun BrandBar() {
 }
 
 @Composable
-private fun FeatureChips() {
+private fun FeatureCards(visible: Boolean) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        FeatureChip(Icons.Default.PlayCircle, "视频")
-        FeatureChip(Icons.Default.PhotoLibrary, "图集")
-        FeatureChip(Icons.Default.Download, "无水印")
-        FeatureChip(Icons.Default.MusicNote, "BGM")
+        FeatureTile(
+            icon = Icons.Default.PlayCircle,
+            label = "视频",
+            caption = "多清晰度",
+            accent = BrandPink,
+            index = 0,
+            visible = visible,
+            modifier = Modifier.weight(1f),
+        )
+        FeatureTile(
+            icon = Icons.Default.PhotoLibrary,
+            label = "图集",
+            caption = "图片动图",
+            accent = BrandCyan,
+            index = 1,
+            visible = visible,
+            modifier = Modifier.weight(1f),
+        )
+        FeatureTile(
+            icon = Icons.Default.Download,
+            label = "无水印",
+            caption = "原画保存",
+            accent = MaterialTheme.colorScheme.secondary,
+            index = 2,
+            visible = visible,
+            modifier = Modifier.weight(1f),
+        )
+        FeatureTile(
+            icon = Icons.Default.MusicNote,
+            label = "BGM",
+            caption = "音频提取",
+            accent = MaterialTheme.colorScheme.tertiary,
+            index = 3,
+            visible = visible,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
 @Composable
-private fun FeatureChip(icon: ImageVector, label: String) {
-    AssistChip(
-        onClick = { },
-        label = {
+private fun FeatureTile(
+    icon: ImageVector,
+    label: String,
+    caption: String,
+    accent: androidx.compose.ui.graphics.Color,
+    index: Int,
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(visible) {
+        if (visible) {
+            delay(index * 55L)
+            shown = true
+        }
+    }
+    val alpha by animateFloatAsState(
+        targetValue = if (shown) 1f else 0f,
+        animationSpec = tween(360, easing = FastOutSlowInEasing),
+        label = "feature-alpha-$index",
+    )
+    val shift by animateFloatAsState(
+        targetValue = if (shown) 0f else 16f,
+        animationSpec = tween(420, easing = FastOutSlowInEasing),
+        label = "feature-shift-$index",
+    )
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                this.alpha = alpha
+                translationY = shift
+            }
+            .height(80.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(accent.copy(alpha = 0.09f))
+            .border(
+                width = 1.dp,
+                color = accent.copy(alpha = 0.16f),
+                shape = RoundedCornerShape(20.dp),
+            )
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .background(accent.copy(alpha = 0.16f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(17.dp),
+                )
+            }
+            Spacer(Modifier.height(4.dp))
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
-        },
-        leadingIcon = {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
-        },
-        shape = CircleShape,
-        colors = AssistChipDefaults.assistChipColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            leadingIconContentColor = MaterialTheme.colorScheme.secondary,
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    )
+            Text(
+                text = caption,
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 10.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                maxLines = 1,
+            )
+        }
+    }
 }
 
 @Composable
 private fun InputCard(
     value: String,
     onValueChange: (String) -> Unit,
+    onClear: () -> Unit,
     onPaste: () -> Unit,
     onSample: () -> Unit,
 ) {
@@ -371,7 +507,7 @@ private fun InputCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -404,15 +540,34 @@ private fun InputCard(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 },
-                minLines = 4,
+                minLines = 3,
                 maxLines = 8,
                 shape = MaterialTheme.shapes.large,
                 trailingIcon = {
-                    IconButton(onClick = onPaste) {
-                        Icon(
-                            imageVector = Icons.Default.ContentPaste,
-                            contentDescription = stringResource(R.string.paste),
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (value.isNotEmpty()) {
+                            IconButton(
+                                onClick = onClear,
+                                modifier = Modifier.size(36.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "清空输入",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = onPaste,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentPaste,
+                                contentDescription = stringResource(R.string.paste),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                     }
                 },
             )

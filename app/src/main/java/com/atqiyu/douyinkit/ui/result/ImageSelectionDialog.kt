@@ -36,7 +36,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,18 +45,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowCompat
 import coil3.compose.AsyncImage
 import com.atqiyu.douyinkit.core.model.ImageInfo
 import com.atqiyu.douyinkit.data.prefs.AppSettings
+import com.atqiyu.douyinkit.ui.components.AppDialogSystemBars
 import com.atqiyu.douyinkit.ui.theme.BrandPink
 
 /**
@@ -102,7 +98,7 @@ fun ImageSelectionDialog(
             decorFitsSystemWindows = false,
         ),
     ) {
-        LightDialogSystemBars()
+        AppDialogSystemBars()
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
@@ -228,18 +224,7 @@ fun ImageSelectionDialog(
     }
 }
 
-@Composable
-private fun LightDialogSystemBars() {
-    val view = LocalView.current
-    val lightBackground = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    SideEffect {
-        val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
-        WindowCompat.getInsetsController(window, view).apply {
-            isAppearanceLightStatusBars = lightBackground
-            isAppearanceLightNavigationBars = lightBackground
-        }
-    }
-}
+
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

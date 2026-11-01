@@ -210,13 +210,21 @@
 
   var CHALLENGE_TEXT = [
     "安全验证", "安全校验", "完成验证", "请完成验证", "请完成以下验证",
-    "验证码", "拖动滑块", "滑动验证", "滑块验证", "人机验证", "行为验证",
+    "拖动滑块", "滑动验证", "滑块验证", "拼图验证", "人机验证", "行为验证",
     "访问过于频繁", "操作过于频繁", "操作频繁", "网络环境异常", "环境异常",
     "系统繁忙", "请稍后再试", "请求过于频繁", "验证失败", "验证已过期",
-    "请登录后查看", "登录后继续"
+    "请完成下方验证", "按住滑块"
   ];
   var CHALLENGE_URL_HINTS = [
-    "captcha", "verify", "challenge", "secsdk", "security-check", "passport", "login"
+    "captcha", "verify", "challenge", "secsdk", "security-check"
+  ];
+  var LOGIN_TEXT = [
+    "登录后免费畅享", "扫码登录", "验证码登录", "密码登录",
+    "登录后继续", "请登录后查看", "手机号登录", "一键登录",
+    "登录即代表同意"
+  ];
+  var LOGIN_URL_HINTS = [
+    "/login", "login?", "passport", "/signin", "/sso"
   ];
   var CHALLENGE_SELECTOR = [
     "[class*='captcha']", "[id*='captcha']",
@@ -227,12 +235,38 @@
     "[class*='verify-slide']", "[id*='verify-slide']"
   ].join(",");
 
+  function isVisible(el) {
+    try {
+      if (!el || !el.getBoundingClientRect) return false;
+      var style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+      if (style && (style.display === "none" || style.visibility === "hidden" ||
+          parseFloat(style.opacity || "1") === 0)) {
+        return false;
+      }
+      var rect = el.getBoundingClientRect();
+      return rect.width > 2 && rect.height > 2;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function firstVisible(root, selector) {
+    try {
+      var nodes = root.querySelectorAll ? root.querySelectorAll(selector) : [];
+      for (var i = 0; i < nodes.length; i++) {
+        if (isVisible(nodes[i])) return nodes[i];
+      }
+    } catch (e) {}
+    return null;
+  }
+
   function challengeInRoot(root, label) {
     try {
-      if (!root || typeof root.querySelector !== "function") return "";
-      if (root.querySelector(CHALLENGE_SELECTOR)) return label + ":selector";
-      var iframes = root.querySelectorAll ? root.querySelectorAll("iframe") : [];
+      if (!root || typeof root.querySelectorAll !== "function") return "";
+      if (firstVisible(root, CHALLENGE_SELECTOR)) return label + ":selector";
+      var iframes = root.querySelectorAll("iframe");
       for (var i = 0; i < iframes.length; i++) {
+        if (!isVisible(iframes[i])) continue;
         var src = String(iframes[i].src || "").toLowerCase();
         for (var j = 0; j < CHALLENGE_URL_HINTS.length; j++) {
           if (src.indexOf(CHALLENGE_URL_HINTS[j]) !== -1) {
@@ -244,12 +278,36 @@
     return "";
   }
 
-  function detectChallenge() {
+  function detectLogin() {
     try {
       var href = String(location.href || "").toLowerCase();
-      for (var i = 0; i < CHALLENGE_URL_HINTS.length; i++) {
-        if (href.indexOf(CHALLENGE_URL_HINTS[i]) !== -1) {
-          return "url:" + CHALLENGE_URL_HINTS[i];
+      for (var i = 0; i < LOGIN_URL_HINTS.length; i++) {
+        if (href.indexOf(LOGIN_URL_HINTS[i]) !== -1) {
+          return "url:" + LOGIN_URL_HINTS[i];
+        }
+      }
+      var title = String(document.title || "");
+      var text = document.body && document.body.innerText
+        ? String(document.body.innerText).slice(0, 4000)
+        : "";
+      var haystack = title + "\n" + text;
+      for (var j = 0; j < LOGIN_TEXT.length; j++) {
+        if (haystack.indexOf(LOGIN_TEXT[j]) !== -1) {
+          return "text:" + LOGIN_TEXT[j];
+        }
+      }
+    } catch (e) {}
+    return "";
+  }
+
+  function detectChallenge(suppressUrlHint) {
+    try {
+      var href = String(location.href || "").toLowerCase();
+      if (!suppressUrlHint) {
+        for (var i = 0; i < CHALLENGE_URL_HINTS.length; i++) {
+          if (href.indexOf(CHALLENGE_URL_HINTS[i]) !== -1) {
+            return "url:" + CHALLENGE_URL_HINTS[i];
+          }
         }
       }
       var title = String(document.title || "");
@@ -280,7 +338,8 @@
 
   window.__DK_getState = function () {
     try {
-      var challengeReason = detectChallenge();
+      var loginReason = detectLogin();
+      var challengeReason = detectChallenge(!!loginReason);
       return JSON.stringify({
         href: cleanUrl(location.href),
         title: document.title || "",
@@ -294,6 +353,8 @@
         bridge: bridgeName,
         challenge: !!challengeReason,
         challengeReason: challengeReason,
+        login: !!loginReason,
+        loginReason: loginReason,
         at: Date.now()
       });
     } catch (e) {

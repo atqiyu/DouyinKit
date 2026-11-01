@@ -310,6 +310,8 @@ class ParseController(
                         challengeExtended = true
                         deadline = System.currentTimeMillis() + VERIFICATION_TIMEOUT_MS
                         markVerification()
+                    } else if (event.state.loginRequired) {
+                        markLoginRequired(event.state)
                     }
                 }
 
@@ -329,30 +331,6 @@ class ParseController(
             }
 
             val now = System.currentTimeMillis()
-            if (!challengeExtended && !_state.value.showWebView) {
-                val elapsed = now - itemStart
-                val current = pageState
-                if (current != null && elapsed >= autoShowDelay(current)) {
-                    _state.update {
-                        it.copy(
-                            showWebView = true,
-                            message = if (current.readyState == "complete") {
-                                "页面已加载但作品数据尚未就绪，已自动展开页面；如出现验证请完成"
-                            } else {
-                                "解析较慢，已自动展开页面查看状态"
-                            },
-                        )
-                    }
-                } else if (current == null && elapsed >= AUTO_SHOW_LOADING_MS) {
-                    _state.update {
-                        it.copy(
-                            showWebView = true,
-                            message = "解析较慢，已自动展开页面查看状态",
-                        )
-                    }
-                }
-            }
-
             if (now >= nextProbe) {
                 nextProbe = now + PROBE_INTERVAL_MS
                 engine.requestPageModel(awemeId)
@@ -364,6 +342,8 @@ class ParseController(
                         challengeExtended = true
                         deadline = now + VERIFICATION_TIMEOUT_MS
                         markVerification()
+                    } else if (state.loginRequired) {
+                        markLoginRequired(state)
                     }
                 }
             }
@@ -377,13 +357,20 @@ class ParseController(
         }
 
         if (detail == null && page == null) {
+            val challenge = pageState?.looksLikeChallenge == true
+            val loginRequired = pageState?.loginRequired == true && !challenge
             val message = when {
-                pageState?.looksLikeChallenge == true -> "需要完成安全验证后重试"
+                challenge -> "需要完成安全验证后重试"
+                loginRequired -> "该作品需要登录后查看，可点击“打开页面”手动登录"
                 lastError != null -> lastError!!
                 else -> "等待作品数据超时，请重试"
             }
             throw DouyinKitException(
-                if (pageState?.looksLikeChallenge == true) ErrorCode.NEEDS_VERIFICATION else ErrorCode.DETAIL_TIMEOUT,
+                when {
+                    challenge -> ErrorCode.NEEDS_VERIFICATION
+                    loginRequired -> ErrorCode.NEEDS_LOGIN
+                    else -> ErrorCode.DETAIL_TIMEOUT
+                },
                 message,
             )
         }
@@ -402,6 +389,8 @@ class ParseController(
                     verificationExtended = true
                     deadline = System.currentTimeMillis() + VERIFICATION_TIMEOUT_MS
                 }
+            } else if (state.loginRequired) {
+                markLoginRequired(state)
             } else if (state.href.contains("/note/") && state.readyState == "complete") {
                 _state.update {
                     if (it.needsVerification) {
@@ -474,6 +463,8 @@ class ParseController(
                 is ParserEvent.PageReady -> {
                     if (event.state.looksLikeChallenge) {
                         markVerification("请在页面中完成验证，完成后会自动继续")
+                    } else if (event.state.loginRequired) {
+                        markLoginRequired(event.state)
                     }
                 }
 
@@ -502,11 +493,16 @@ class ParseController(
         }
     }
 
-    private fun autoShowDelay(state: PageState): Long {
-        return if (state.readyState == "complete") {
-            AUTO_SHOW_READY_MS
-        } else {
-            AUTO_SHOW_LOADING_MS
+    private fun markLoginRequired(state: PageState) {
+        if (!state.loginRequired || state.looksLikeChallenge) return
+        _state.update { current ->
+            current.copy(
+                message = if (current.showWebView) {
+                    "请在页面中登录，登录完成后会自动继续"
+                } else {
+                    "该作品需要登录后查看；可点击“显示页面”手动登录"
+                },
+            )
         }
     }
 
@@ -551,8 +547,6 @@ class ParseController(
         private const val VERIFICATION_TIMEOUT_MS = 120_000L
         private const val FIRST_PROBE_MS = 7_000L
         private const val PROBE_INTERVAL_MS = 6_000L
-        private const val AUTO_SHOW_READY_MS = 8_000L
-        private const val AUTO_SHOW_LOADING_MS = 15_000L
         private const val PAGE_ONLY_FALLBACK_MS = 22_000L
     }
 }
