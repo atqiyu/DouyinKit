@@ -422,18 +422,17 @@ private fun SettingsCategoryChips(
     selected: SettingsCategory,
     onSelect: (SettingsCategory) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        SettingsCategory.entries.forEach { category ->
-            FilterChip(
-                selected = selected == category,
-                onClick = { onSelect(category) },
-                label = { Text(category.label) },
-            )
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        SettingsCategory.entries.chunked(4).forEach { rowCategories ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowCategories.forEach { category ->
+                    FilterChip(
+                        selected = selected == category,
+                        onClick = { onSelect(category) },
+                        label = { Text(category.label) },
+                    )
+                }
+            }
         }
     }
 }

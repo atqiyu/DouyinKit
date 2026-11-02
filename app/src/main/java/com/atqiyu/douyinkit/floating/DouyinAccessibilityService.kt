@@ -8,6 +8,7 @@ import android.content.Intent
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -29,6 +30,7 @@ class DouyinAccessibilityService : AccessibilityService() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var lastLoggedPackage: String? = null
+    private var lastForegroundCheck = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -40,23 +42,44 @@ class DouyinAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val packageName = event?.packageName?.toString() ?: return
-        val labels = buildString {
-            for (index in 0 until (event?.text?.size ?: 0)) {
-                append(event?.text?.get(index)).append(' ')
+        if (DouyinPackages.of(packageName) != null) {
+            val texts = event.text
+            val label = when {
+                texts == null || texts.isEmpty() -> event.contentDescription?.toString()
+                texts.size == 1 -> texts[0]?.toString()
+                else -> "${texts[0]} ${texts[1]}"
             }
-            append(event?.contentDescription).append(' ')
+            if (label?.contains("链接已复制") == true || label?.contains("复制成功") == true) {
+                FloatingAssistantBus.signalClipboardCopy()
+            }
         }
-        if (DouyinPackages.of(packageName) != null &&
-            (labels.contains("链接已复制") || labels.contains("复制成功"))
-        ) {
-            FloatingAssistantBus.signalClipboardCopy()
-        }
+        if (event.eventType == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) return
+        // Content-change events often arrive from a background app after the launcher is shown.
+        // The active window is authoritative; content events are throttled because they are noisy.
+        val stateChanged = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        val now = SystemClock.uptimeMillis()
+        if (!stateChanged && now - lastForegroundCheck < 800L) return
+        lastForegroundCheck = now
         if (DouyinPackages.isSystemUi(packageName) || packageName == this.packageName) return
-        if (lastLoggedPackage != packageName) {
-            Log.d(TAG, "window event package=$packageName")
-            lastLoggedPackage = packageName
+        val eventTarget = DouyinPackages.targetOf(packageName)
+        if (eventTarget == FloatingAssistantBus.state.value.foreground) return
+        val activePackage = runCatching {
+            rootInActiveWindow?.packageName?.toString()
+        }.getOrNull()
+        val target = when {
+            activePackage == null -> packageName
+            activePackage == this.packageName -> return
+            DouyinPackages.isSystemUi(activePackage) -> return
+            else -> activePackage
         }
-        FloatingAssistantBus.setForeground(packageName)
+        if (DouyinPackages.isSystemUi(target) || target == this.packageName) return
+        val nextTarget = DouyinPackages.targetOf(target)
+        if (nextTarget == FloatingAssistantBus.state.value.foreground) return
+        if (lastLoggedPackage != target) {
+            Log.d(TAG, "window event package=$target")
+            lastLoggedPackage = target
+        }
+        FloatingAssistantBus.setForeground(target)
     }
 
     override fun onInterrupt() {

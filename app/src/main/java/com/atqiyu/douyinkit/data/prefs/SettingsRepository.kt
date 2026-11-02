@@ -19,7 +19,7 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 enum class FloatingMode { STANDARD, AUTO }
 
-enum class FloatingPanelStyle { GLASS, CLEAR, SOLID }
+enum class FloatingPanelStyle { GLASS, CLEAR, TRANSPARENT, SOLID }
 
 enum class FloatingPanelColor(val argb: Long) {
     DARK(0xFF10141C),

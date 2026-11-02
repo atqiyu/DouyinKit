@@ -37,7 +37,7 @@ class BackupModelsTest {
             floatingOrbSizeDp = 60,
             floatingOrbAlpha = 0.66f,
             floatingPanelOpacity = 0.42f,
-            floatingPanelStyle = FloatingPanelStyle.CLEAR,
+            floatingPanelStyle = FloatingPanelStyle.TRANSPARENT,
             floatingPanelColor = FloatingPanelColor.PLUM,
             floatingPanelBlur = 8,
             floatingShowClipboard = false,

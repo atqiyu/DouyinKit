@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -142,9 +141,11 @@ fun FloatingBallSettings() {
         scope.launch {
             context.appContainer.settingsRepository.setFloatingBallEnabled(true)
             runCatching { FloatingAssistantService.start(context) }
-                .onFailure {
-                    FloatingAssistantBus.update {
-                        it.copy(message = "浮球启动失败：${it.message ?: "系统限制"}")
+                .onFailure { error ->
+                    FloatingAssistantBus.update { state ->
+                        state.copy(
+                            message = "浮球启动失败：${error.message ?: "系统限制"}",
+                        )
                     }
                 }
             FloatingAssistantScheduler.schedule(context)
@@ -274,22 +275,31 @@ fun FloatingBallSettings() {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     listOf(
-                        FloatingPanelStyle.GLASS to "毛玻璃",
-                        FloatingPanelStyle.CLEAR to "半透明",
-                        FloatingPanelStyle.SOLID to "纯色",
-                    ).forEach { (style, label) ->
-                        FilterChip(
-                            selected = current.floatingPanelStyle == style,
-                            onClick = {
-                                scope.launch {
-                                    context.appContainer.settingsRepository
-                                        .setFloatingPanelStyle(style)
-                                }
-                            },
-                            label = { Text(label) },
-                        )
+                        listOf(
+                            FloatingPanelStyle.GLASS to "毛玻璃",
+                            FloatingPanelStyle.CLEAR to "半透明",
+                        ),
+                        listOf(
+                            FloatingPanelStyle.TRANSPARENT to "完全透明",
+                            FloatingPanelStyle.SOLID to "纯色",
+                        ),
+                    ).forEach { rowItems ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowItems.forEach { (style, label) ->
+                                FilterChip(
+                                    selected = current.floatingPanelStyle == style,
+                                    onClick = {
+                                        scope.launch {
+                                            context.appContainer.settingsRepository
+                                                .setFloatingPanelStyle(style)
+                                        }
+                                    },
+                                    label = { Text(label) },
+                                )
+                            }
+                        }
                     }
                 }
                 FloatingSliderRow(
@@ -348,42 +358,30 @@ fun FloatingBallSettings() {
                         }
                     }
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    val blurSupported = remember {
-                        context.getSystemService(WindowManager::class.java)
-                            .isCrossWindowBlurEnabled
-                    }
-                    FloatingSliderRow(
-                        title = "毛玻璃模糊",
-                        valueText = if (blurSupported) {
-                            if (current.floatingPanelStyle == FloatingPanelStyle.GLASS) {
-                                "${current.floatingPanelBlur}"
-                            } else {
-                                "仅毛玻璃模式"
-                            }
-                        } else {
-                            "系统未启用跨窗口模糊"
-                        },
-                        value = current.floatingPanelBlur.toFloat(),
-                        valueRange = 0f..25f,
-                        steps = 8,
-                        enabled = blurSupported &&
-                            current.floatingPanelStyle == FloatingPanelStyle.GLASS,
-                        onValueChange = { value ->
-                            scope.launch {
-                                context.appContainer.settingsRepository
-                                    .setFloatingPanelBlur(value.toInt())
-                            }
-                        },
-                    )
-                } else {
-                    Text(
-                        "毛玻璃模糊需要 Android 12 及以上；旧系统自动使用半透明背景。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 3.dp),
-                    )
-                }
+                FloatingSliderRow(
+                    title = "磨砂强度",
+                    valueText = if (current.floatingPanelStyle == FloatingPanelStyle.GLASS) {
+                        "${current.floatingPanelBlur}"
+                    } else {
+                        "仅毛玻璃模式"
+                    },
+                    value = current.floatingPanelBlur.toFloat(),
+                    valueRange = 0f..25f,
+                    steps = 8,
+                    enabled = current.floatingPanelStyle == FloatingPanelStyle.GLASS,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository
+                                .setFloatingPanelBlur(value.toInt())
+                        }
+                    },
+                )
+                Text(
+                    "磨砂质感只绘制在浮窗自身内部，不会模糊屏幕其他区域。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
                 FloatingSwitchRow(
                     title = "浮窗显示剪贴板内容",
                     subtitle = "关闭后只保留解析状态、进度和队列提示",
@@ -422,7 +420,7 @@ fun FloatingBallSettings() {
                     title = "无障碍服务",
                     granted = permissions.accessibility,
                     action = "去开启",
-                    subtitle = "连播模式需要；用于识别抖音前台并点击分享按钮，不上传页面内容",
+                    subtitle = "连播模式和浮球状态点需要；仅本机识别前台并点击分享按钮，不上传页面内容",
                     onClick = { FloatingPermissions.openAccessibilitySettings(context) },
                 )
                 PermissionRow(

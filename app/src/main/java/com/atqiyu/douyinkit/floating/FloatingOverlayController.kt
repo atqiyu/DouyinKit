@@ -1,5 +1,6 @@
 package com.atqiyu.douyinkit.floating
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Canvas
@@ -28,10 +29,10 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.core.widget.doAfterTextChanged
 import com.atqiyu.douyinkit.R
 import com.atqiyu.douyinkit.core.util.LinkExtractor
 import com.atqiyu.douyinkit.data.prefs.FloatingMode
-import com.atqiyu.douyinkit.data.prefs.FloatingPanelStyle
 
 /**
  * Floating orb + radial actions + independent info panel. The orb is the only anchor;
@@ -63,6 +64,13 @@ class FloatingOverlayController(
     private val orbCircle = FrameLayout(context)
     private val orbImage = ImageView(context)
     private val statusDot = View(context)
+    private val statusOnline = statusDotDrawable(0xFF39D98A.toInt())
+    private val statusIdle = statusDotDrawable(0xFF87909E.toInt())
+    private val statusUnknown = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(Color.TRANSPARENT)
+        setStroke(dp(2), Color.argb(180, 135, 144, 158))
+    }
     private val modeBadge = TextView(context)
     private val progressRing = OrbProgressRing()
     private var orbParams: WindowManager.LayoutParams = orbLayoutParams(dp(48))
@@ -86,6 +94,7 @@ class FloatingOverlayController(
     private val panelQueue = TextView(context)
     private val panelLink = TextView(context)
     private val panelClose = TextView(context)
+    private val panelDragArea = FrameLayout(context)
     private val panelDragHandle = View(context)
     private val panelResizeHandle = TextView(context)
     private var panelParams = WindowManager.LayoutParams(
@@ -170,10 +179,15 @@ class FloatingOverlayController(
         modeBadge.contentDescription =
             if (newState.mode == FloatingMode.AUTO) "连播模式" else "轻享模式"
         val douyinForeground = !newState.appForeground && newState.foreground.isDouyin
-        statusDot.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(if (douyinForeground) 0xFF39D98A.toInt() else 0xFF87909E.toInt())
-            setStroke(dp(2), Color.argb(220, 12, 16, 22))
+        statusDot.background = when {
+            douyinForeground -> statusOnline
+            newState.accessibilityReady -> statusIdle
+            else -> statusUnknown
+        }
+        statusDot.contentDescription = when {
+            douyinForeground -> "抖音在前台"
+            newState.accessibilityReady -> "抖音不在前台"
+            else -> "无法检测前台应用，请开启无障碍服务"
         }
         val focused = isBusy()
         progressRing.update(
@@ -193,7 +207,12 @@ class FloatingOverlayController(
         panelVisible = true
         panelRoot.animate().cancel()
         if (!panelPositioned) {
-            panelParams.x = dp(12)
+            val orbCenterX = orbParams.x + orbParams.width / 2
+            panelParams.x = if (orbCenterX < screenWidth / 2) {
+                (screenWidth - panelWidthPx - dp(12)).coerceAtLeast(dp(8))
+            } else {
+                dp(12)
+            }
             panelParams.y = (screenHeight - navBar - panelHeightPx - dp(60))
                 .coerceAtLeast(statusBar + dp(12))
         }
@@ -233,6 +252,9 @@ class FloatingOverlayController(
             .withEndAction {
                 if (!panelVisible && panelAttached) {
                     panelRoot.visibility = View.GONE
+                    panelRoot.alpha = 1f
+                    panelRoot.scaleX = 1f
+                    panelRoot.scaleY = 1f
                     runCatching {
                         windowManager.updateViewLayout(panelRoot, hiddenPanelParams())
                     }
@@ -243,7 +265,9 @@ class FloatingOverlayController(
 
     fun showInput(prefill: String?) {
         if (inputAttached) return
-        hidePanel(notify = false)
+        actionsVisible = false
+        hideActions()
+        hidePanel(notify = true)
         val root = FrameLayout(context).apply {
             setBackgroundColor(0x8C000000.toInt())
             isFocusableInTouchMode = true
@@ -292,6 +316,7 @@ class FloatingOverlayController(
             visibility = View.GONE
             setPadding(0, dp(5), 0, 0)
         }
+        input.doAfterTextChanged { error.visibility = View.GONE }
         val buttons = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
@@ -311,6 +336,9 @@ class FloatingOverlayController(
                 return@setOnClickListener
             }
             hideInput()
+            if (state.mode == FloatingMode.AUTO) {
+                actionsVisible = true
+            }
             onInputSubmit(raw)
         }
         buttons.addView(
@@ -422,11 +450,7 @@ class FloatingOverlayController(
             setColor(0xF20F141C.toInt())
         }
         orbCircle.addView(orbImage, FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER))
-        statusDot.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(0xFF87909E.toInt())
-            setStroke(dp(2), Color.argb(220, 12, 16, 22))
-        }
+        statusDot.background = statusIdle
         orbCircle.addView(
             statusDot,
             FrameLayout.LayoutParams(dp(11), dp(11), Gravity.TOP or Gravity.END).apply {
@@ -466,23 +490,29 @@ class FloatingOverlayController(
             cornerRadius = dp(2).toFloat()
             setColor(Color.argb(120, 255, 255, 255))
         }
-        header.addView(
+        panelDragArea.setBackgroundColor(Color.TRANSPARENT)
+        panelDragArea.addView(
             panelDragHandle,
+            FrameLayout.LayoutParams(dp(32), dp(3), Gravity.CENTER),
+        )
+        header.addView(
+            panelDragArea,
             FrameLayout.LayoutParams(
-                dp(32),
-                dp(3),
+                dp(104),
+                dp(28),
                 Gravity.CENTER_HORIZONTAL or Gravity.TOP,
-            ).apply { topMargin = dp(3) },
+            ),
         )
         panelClose.text = "×"
         panelClose.setTextColor(0xFFD6DCE5.toInt())
-        panelClose.textSize = 18f
+        panelClose.textSize = 17f
         panelClose.gravity = Gravity.CENTER
         panelClose.contentDescription = "关闭浮窗"
+        panelClose.setShadowLayer(3f, 0f, 1f, Color.argb(180, 0, 0, 0))
         panelClose.setOnClickListener { hidePanel(notify = true) }
         header.addView(
             panelClose,
-            FrameLayout.LayoutParams(dp(30), dp(28), Gravity.END or Gravity.TOP),
+            FrameLayout.LayoutParams(dp(34), dp(30), Gravity.END or Gravity.TOP),
         )
         panelCard.addView(
             header,
@@ -498,9 +528,10 @@ class FloatingOverlayController(
             setPadding(0, dp(2), 0, dp(10))
         }
         panelMessage.setTextColor(Color.argb(235, 235, 240, 246))
-        panelMessage.textSize = 11.5f
+        panelMessage.textSize = 11f
         panelMessage.maxLines = 3
         panelMessage.setPadding(0, 0, 0, dp(3))
+        panelMessage.setShadowLayer(3f, 0f, 1f, Color.argb(170, 0, 0, 0))
         column.addView(panelMessage)
         panelProgress.max = 1000
         panelProgress.progressTintList = ColorStateList.valueOf(0xFFFE2C55.toInt())
@@ -517,14 +548,16 @@ class FloatingOverlayController(
             },
         )
         panelQueue.setTextColor(Color.argb(185, 185, 193, 204))
-        panelQueue.textSize = 10f
+        panelQueue.textSize = 9.5f
         panelQueue.visibility = View.GONE
+        panelQueue.setShadowLayer(3f, 0f, 1f, Color.argb(160, 0, 0, 0))
         column.addView(panelQueue)
         panelLink.setTextColor(Color.argb(185, 143, 205, 212))
-        panelLink.textSize = 10f
+        panelLink.textSize = 9.5f
         panelLink.maxLines = 1
         panelLink.visibility = View.GONE
         panelLink.setPadding(0, dp(3), 0, 0)
+        panelLink.setShadowLayer(3f, 0f, 1f, Color.argb(160, 0, 0, 0))
         column.addView(panelLink)
         scroll.addView(column, FrameLayout.LayoutParams(-1, -2))
         panelCard.addView(
@@ -538,13 +571,14 @@ class FloatingOverlayController(
             },
         )
         panelResizeHandle.text = "◢"
-        panelResizeHandle.setTextColor(Color.argb(130, 220, 228, 238))
-        panelResizeHandle.textSize = 10f
+        panelResizeHandle.setTextColor(Color.argb(150, 220, 228, 238))
+        panelResizeHandle.textSize = 11f
         panelResizeHandle.gravity = Gravity.CENTER
         panelResizeHandle.contentDescription = "调整浮窗大小"
+        panelResizeHandle.setShadowLayer(3f, 0f, 1f, Color.argb(160, 0, 0, 0))
         panelCard.addView(
             panelResizeHandle,
-            FrameLayout.LayoutParams(dp(26), dp(22), Gravity.END or Gravity.BOTTOM),
+            FrameLayout.LayoutParams(dp(36), dp(30), Gravity.END or Gravity.BOTTOM),
         )
         panelRoot.addView(
             panelCard,
@@ -606,8 +640,9 @@ class FloatingOverlayController(
         }
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun bindPanelGestures() {
-        panelDragHandle.setOnTouchListener { _, event ->
+        panelDragArea.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     panelPositioned = true
@@ -653,6 +688,11 @@ class FloatingOverlayController(
                     panelParams.height = panelHeightPx
                     panelParams.x =
                         panelParams.x.coerceAtMost(screenWidth - panelWidthPx - dp(2))
+                    panelParams.y = panelParams.y.coerceIn(
+                        statusBar + dp(2),
+                        (screenHeight - navBar - panelHeightPx - dp(2))
+                            .coerceAtLeast(statusBar + dp(2)),
+                    )
                     runCatching { windowManager.updateViewLayout(panelRoot, panelParams) }
                     true
                 }
@@ -699,14 +739,6 @@ class FloatingOverlayController(
                 onClick = onPrimaryAction,
             )
 
-            state.mode == FloatingMode.AUTO -> specs[ActionKind.PRIMARY] = ActionSpec(
-                label = "分析当前视频",
-                icon = R.drawable.ic_float_analyze,
-                accent = true,
-                enabled = !state.appForeground && !isBusy(),
-                onClick = onAutoAction,
-            )
-
             state.promptVisible && !state.clipboardLink.isNullOrBlank() ->
                 specs[ActionKind.PRIMARY] = ActionSpec(
                     label = "解析剪贴板",
@@ -714,6 +746,16 @@ class FloatingOverlayController(
                     accent = true,
                     onClick = onPrimaryAction,
                 )
+
+            state.mode == FloatingMode.AUTO &&
+                !state.appForeground &&
+                state.foreground.isDouyin &&
+                !isBusy() -> specs[ActionKind.PRIMARY] = ActionSpec(
+                label = "分析当前视频",
+                icon = R.drawable.ic_float_analyze,
+                accent = true,
+                onClick = onAutoAction,
+            )
         }
         specs[ActionKind.INPUT] = ActionSpec(
             label = null,
@@ -749,7 +791,7 @@ class FloatingOverlayController(
         }
         if (state.resultReady) {
             specs[ActionKind.RESULT] = ActionSpec(
-                label = "查看结果",
+                label = "结果",
                 icon = R.drawable.ic_float_result,
                 accent = false,
                 onClick = onOpenApp,
@@ -805,8 +847,8 @@ class FloatingOverlayController(
         panelMessage.text = state.message
         panelMessage.visibility = if (state.message.isBlank()) View.GONE else View.VISIBLE
         val progress = state.progress
-        panelProgress.visibility =
-            if (progress != null || focused) View.VISIBLE else View.GONE
+        val showProgress = focused || (progress != null && progress < 0.999f)
+        panelProgress.visibility = if (showProgress) View.VISIBLE else View.GONE
         if (progress != null) {
             panelProgress.isIndeterminate = false
             panelProgress.progress = (progress.coerceIn(0f, 1f) * 1000).toInt()
@@ -847,6 +889,14 @@ class FloatingOverlayController(
         val windowSize = sizePx + dp(18)
         orbParams.width = windowSize
         orbParams.height = windowSize
+        orbParams.x = orbParams.x.coerceIn(
+            dp(4),
+            (screenWidth - windowSize - dp(4)).coerceAtLeast(dp(4)),
+        )
+        orbParams.y = orbParams.y.coerceIn(
+            statusBar + dp(4),
+            (screenHeight - navBar - windowSize - dp(4)).coerceAtLeast(statusBar + dp(4)),
+        )
         orbRoot.layoutParams = FrameLayout.LayoutParams(windowSize, windowSize)
         (orbCircle.layoutParams as? FrameLayout.LayoutParams)?.let {
             it.width = sizePx
@@ -903,40 +953,14 @@ class FloatingOverlayController(
             "${state.panelStyle}:${state.panelOpacity}:${state.panelColorArgb}:${state.panelBlur}"
         if (!force && key == lastPanelStyleKey) return params
         lastPanelStyleKey = key
-        val baseAlpha = when (state.panelStyle) {
-            FloatingPanelStyle.GLASS -> state.panelOpacity * 0.92f
-            FloatingPanelStyle.CLEAR -> state.panelOpacity * 0.58f
-            FloatingPanelStyle.SOLID -> state.panelOpacity
-        }.coerceIn(0.12f, 1f)
-        val color = state.panelColorArgb.toInt()
-        val alpha = (baseAlpha * 255).toInt().coerceIn(0, 255)
-        panelCard.background = GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            intArrayOf(
-                Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color)),
-                Color.argb(
-                    (alpha * 0.82f).toInt(),
-                    Color.red(color),
-                    Color.green(color),
-                    Color.blue(color),
-                ),
-            ),
-        ).apply {
-            cornerRadius = dp(20).toFloat()
-            setStroke(dp(1), Color.argb(55, 255, 255, 255))
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val blurEnabled = panelVisible &&
-                state.panelStyle == FloatingPanelStyle.GLASS &&
-                windowManager.isCrossWindowBlurEnabled()
-            if (blurEnabled) {
-                params.flags = params.flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
-                params.setBlurBehindRadius(dp(state.panelBlur.coerceIn(0, 25)))
-            } else {
-                params.flags =
-                    params.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND.inv()
-            }
-        }
+        panelCard.background = FrostedPanelDrawable(
+            baseColor = state.panelColorArgb.toInt(),
+            opacity = state.panelOpacity,
+            style = state.panelStyle,
+            frost = state.panelBlur,
+            cornerRadius = dp(20).toFloat(),
+            density = density,
+        )
         if (panelAttached && panelVisible) {
             runCatching { windowManager.updateViewLayout(panelRoot, params) }
         }
@@ -988,6 +1012,13 @@ class FloatingOverlayController(
             cornerRadius = dp(radiusDp).toFloat()
             setColor(color)
             setStroke(dp(1), stroke)
+        }
+
+    private fun statusDotDrawable(color: Int): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(color)
+            setStroke(dp(2), Color.argb(220, 12, 16, 22))
         }
 
     private fun overlayType(): Int =
@@ -1064,7 +1095,19 @@ class FloatingOverlayController(
         }
 
         fun configure(newSpec: ActionSpec) {
+            val previous = spec
             spec = newSpec
+            if (previous != null &&
+                previous.label == newSpec.label &&
+                previous.icon == newSpec.icon &&
+                previous.accent == newSpec.accent &&
+                previous.danger == newSpec.danger &&
+                previous.enabled == newSpec.enabled
+            ) {
+                content.isEnabled = newSpec.enabled
+                content.alpha = if (newSpec.enabled) 1f else 0.5f
+                return
+            }
             content.background = if (kind == ActionKind.PRIMARY) {
                 null
             } else {
@@ -1077,6 +1120,8 @@ class FloatingOverlayController(
                 ActionKind.OPEN_APP -> "打开 DouyinKit"
                 else -> "浮球操作"
             }
+            (icon.parent as? android.view.ViewGroup)?.removeView(icon)
+            (label.parent as? android.view.ViewGroup)?.removeView(label)
             content.removeAllViews()
             val labeled = !newSpec.label.isNullOrBlank()
             val size = dp(42)
@@ -1209,6 +1254,7 @@ class FloatingOverlayController(
 
         fun moveTo(position: Pair<Int, Int>) {
             if (!isShown) return
+            if (params.x == position.first && params.y == position.second) return
             params.x = position.first
             params.y = position.second
             runCatching { windowManager.updateViewLayout(root, params) }
@@ -1247,9 +1293,12 @@ class FloatingOverlayController(
         }
 
         fun update(progress: Float?, active: Boolean, reduced: Boolean) {
-            this.progress = progress?.coerceIn(0f, 1f)
+            val nextProgress = progress?.coerceIn(0f, 1f)
+            val nextAlpha = if (reduced) 0.55f else 1f
+            if (this.progress == nextProgress && this.active == active && alpha == nextAlpha) return
+            this.progress = nextProgress
             this.active = active
-            alpha = if (reduced) 0.55f else 1f
+            alpha = nextAlpha
             if (active && this.progress == null) {
                 if (!animator.isStarted) animator.start()
             } else {

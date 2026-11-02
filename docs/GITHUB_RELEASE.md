@@ -4,8 +4,8 @@
 
 - 仓库：<https://github.com/atqiyu/DouyinKit>
 - 最新 Release：<https://github.com/atqiyu/DouyinKit/releases/tag/v1.5.1>
-- 最新 APK：`DouyinKit-v1.5.1.apk`（3,441,363 字节，R8 优化构建）
-- 最新资产 SHA-256：`1defbed172ca5f118741524bf51bcc50e2dc28c412e1f0c53c9875ed0a918b67`
+- 最新 APK：`DouyinKit-v1.5.1.apk`（versionCode 9，3,441,363 字节，R8 优化构建）
+- 最新资产 SHA-256：`6b5f5938d424575ea21599d1884526d891e48f9d1af1498305116519e1490cb9`
 - 首个 Release：<https://github.com/atqiyu/DouyinKit/releases/tag/v1.2.0>
 - 可见性：Public；默认分支：`main`；许可证：MIT
 - 已设置仓库描述和 9 个 Topics
@@ -60,6 +60,21 @@ gh release create v1.5.1 "dist/DouyinKit-v1.5.1.apk" \
   --title "DouyinKit v1.5.1" \
   --notes-file RELEASE_NOTES_v1.5.1.md
 ```
+
+### 替换已发布版本（修复版）
+
+v1.5.1 首次发布后发现了浮球图标重复挂载的崩溃和 ColorOS 整屏模糊问题，修复版使用同一
+versionName、versionCode 递增到 9。替换已发布资产时移动 tag，并强制上传新 APK：
+
+```bash
+git tag -f v1.5.1
+git push -f origin v1.5.1
+gh release upload v1.5.1 dist/DouyinKit-v1.5.1.apk --clobber
+gh release edit v1.5.1 --notes-file RELEASE_NOTES_v1.5.1.md
+```
+
+上传后核对 `gh release view v1.5.1 --json assets,tagName,isLatest` 中的资产摘要应为
+`6b5f5938d424575ea21599d1884526d891e48f9d1af1498305116519e1490cb9`。
 
 如果从零重建仓库（仅作参考，当前仓库已完成）：
 
