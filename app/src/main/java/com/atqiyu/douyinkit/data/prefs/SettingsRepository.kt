@@ -52,6 +52,11 @@ data class AppSettings(
     val floatingPanelColor: FloatingPanelColor = FloatingPanelColor.DARK,
     val floatingPanelBlur: Int = 18,
     val floatingShowClipboard: Boolean = true,
+    val floatingActionDistanceDp: Int = 8,
+    val floatingActionAngleOffset: Int = 0,
+    val floatingPanelMinWidthDp: Int = 160,
+    val floatingPanelMinHeightDp: Int = 64,
+    val floatingIdleTimeoutSeconds: Int = 45,
 )
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -108,6 +113,16 @@ class SettingsRepository(private val context: Context) {
                 }.getOrDefault(FloatingPanelColor.DARK),
                 floatingPanelBlur = (prefs[KEY_FLOATING_PANEL_BLUR] ?: 18).coerceIn(0, 25),
                 floatingShowClipboard = prefs[KEY_FLOATING_SHOW_CLIPBOARD] ?: true,
+                floatingActionDistanceDp = (prefs[KEY_FLOATING_ACTION_DISTANCE] ?: 8)
+                    .coerceIn(0, 24),
+                floatingActionAngleOffset = (prefs[KEY_FLOATING_ACTION_ANGLE] ?: 0)
+                    .coerceIn(-60, 60),
+                floatingPanelMinWidthDp = (prefs[KEY_FLOATING_PANEL_MIN_WIDTH] ?: 160)
+                    .coerceIn(150, 260),
+                floatingPanelMinHeightDp = (prefs[KEY_FLOATING_PANEL_MIN_HEIGHT] ?: 64)
+                    .coerceIn(64, 160),
+                floatingIdleTimeoutSeconds = (prefs[KEY_FLOATING_IDLE_TIMEOUT] ?: 45)
+                    .coerceIn(0, 180),
             )
         }
 
@@ -199,6 +214,26 @@ class SettingsRepository(private val context: Context) {
         dataStore.edit { it[KEY_FLOATING_SHOW_CLIPBOARD] = show }
     }
 
+    suspend fun setFloatingActionDistance(distanceDp: Int) {
+        dataStore.edit { it[KEY_FLOATING_ACTION_DISTANCE] = distanceDp.coerceIn(0, 24) }
+    }
+
+    suspend fun setFloatingActionAngleOffset(degrees: Int) {
+        dataStore.edit { it[KEY_FLOATING_ACTION_ANGLE] = degrees.coerceIn(-60, 60) }
+    }
+
+    suspend fun setFloatingPanelMinWidth(widthDp: Int) {
+        dataStore.edit { it[KEY_FLOATING_PANEL_MIN_WIDTH] = widthDp.coerceIn(150, 260) }
+    }
+
+    suspend fun setFloatingPanelMinHeight(heightDp: Int) {
+        dataStore.edit { it[KEY_FLOATING_PANEL_MIN_HEIGHT] = heightDp.coerceIn(64, 160) }
+    }
+
+    suspend fun setFloatingIdleTimeout(seconds: Int) {
+        dataStore.edit { it[KEY_FLOATING_IDLE_TIMEOUT] = seconds.coerceIn(0, 180) }
+    }
+
     suspend fun replaceAll(settings: AppSettings) {
         dataStore.edit { prefs ->
             prefs[KEY_DEFAULT_QUALITY] = settings.defaultQualityHeight
@@ -223,6 +258,11 @@ class SettingsRepository(private val context: Context) {
             prefs[KEY_FLOATING_PANEL_COLOR] = settings.floatingPanelColor.name
             prefs[KEY_FLOATING_PANEL_BLUR] = settings.floatingPanelBlur
             prefs[KEY_FLOATING_SHOW_CLIPBOARD] = settings.floatingShowClipboard
+            prefs[KEY_FLOATING_ACTION_DISTANCE] = settings.floatingActionDistanceDp
+            prefs[KEY_FLOATING_ACTION_ANGLE] = settings.floatingActionAngleOffset
+            prefs[KEY_FLOATING_PANEL_MIN_WIDTH] = settings.floatingPanelMinWidthDp
+            prefs[KEY_FLOATING_PANEL_MIN_HEIGHT] = settings.floatingPanelMinHeightDp
+            prefs[KEY_FLOATING_IDLE_TIMEOUT] = settings.floatingIdleTimeoutSeconds
         }
     }
 
@@ -249,5 +289,10 @@ class SettingsRepository(private val context: Context) {
         val KEY_FLOATING_PANEL_COLOR = stringPreferencesKey("floating_panel_color")
         val KEY_FLOATING_PANEL_BLUR = intPreferencesKey("floating_panel_blur")
         val KEY_FLOATING_SHOW_CLIPBOARD = booleanPreferencesKey("floating_show_clipboard")
+        val KEY_FLOATING_ACTION_DISTANCE = intPreferencesKey("floating_action_distance")
+        val KEY_FLOATING_ACTION_ANGLE = intPreferencesKey("floating_action_angle")
+        val KEY_FLOATING_PANEL_MIN_WIDTH = intPreferencesKey("floating_panel_min_width")
+        val KEY_FLOATING_PANEL_MIN_HEIGHT = intPreferencesKey("floating_panel_min_height")
+        val KEY_FLOATING_IDLE_TIMEOUT = intPreferencesKey("floating_idle_timeout")
     }
 }

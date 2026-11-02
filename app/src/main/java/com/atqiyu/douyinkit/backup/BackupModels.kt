@@ -64,6 +64,11 @@ data class ConfigSettings(
     val floatingPanelColor: String = "DARK",
     val floatingPanelBlur: Int = 18,
     val floatingShowClipboard: Boolean = true,
+    val floatingActionDistanceDp: Int = 8,
+    val floatingActionAngleOffset: Int = 0,
+    val floatingPanelMinWidthDp: Int = 160,
+    val floatingPanelMinHeightDp: Int = 64,
+    val floatingIdleTimeoutSeconds: Int = 45,
 ) {
     fun toSettings(): AppSettings = AppSettings(
         defaultQualityHeight = defaultQualityHeight.coerceIn(0, 2160),
@@ -92,6 +97,11 @@ data class ConfigSettings(
             .getOrDefault(FloatingPanelColor.DARK),
         floatingPanelBlur = floatingPanelBlur.coerceIn(0, 25),
         floatingShowClipboard = floatingShowClipboard,
+        floatingActionDistanceDp = floatingActionDistanceDp.coerceIn(0, 24),
+        floatingActionAngleOffset = floatingActionAngleOffset.coerceIn(-60, 60),
+        floatingPanelMinWidthDp = floatingPanelMinWidthDp.coerceIn(150, 260),
+        floatingPanelMinHeightDp = floatingPanelMinHeightDp.coerceIn(64, 160),
+        floatingIdleTimeoutSeconds = floatingIdleTimeoutSeconds.coerceIn(0, 180),
     )
 
     companion object {
@@ -118,6 +128,11 @@ data class ConfigSettings(
             floatingPanelColor = settings.floatingPanelColor.name,
             floatingPanelBlur = settings.floatingPanelBlur,
             floatingShowClipboard = settings.floatingShowClipboard,
+            floatingActionDistanceDp = settings.floatingActionDistanceDp,
+            floatingActionAngleOffset = settings.floatingActionAngleOffset,
+            floatingPanelMinWidthDp = settings.floatingPanelMinWidthDp,
+            floatingPanelMinHeightDp = settings.floatingPanelMinHeightDp,
+            floatingIdleTimeoutSeconds = settings.floatingIdleTimeoutSeconds,
         )
     }
 }

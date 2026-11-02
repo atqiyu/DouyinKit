@@ -1,6 +1,9 @@
 package com.atqiyu.douyinkit.floating
 
 import android.annotation.SuppressLint
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Canvas
@@ -13,6 +16,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
+import android.os.SystemClock
 import android.text.InputType
 import android.util.Log
 import android.view.Gravity
@@ -82,6 +86,18 @@ class FloatingOverlayController(
     private var downOrbX = 0
     private var downOrbY = 0
     private var draggingOrb = false
+    private var sleeping = false
+    private var preSleepX = 0
+    private var preSleepY = 0
+    private var preSleepAlpha = 1f
+    private var orbAnimator: ValueAnimator? = null
+    private var sleepCheckScheduled = false
+    private var scheduledSleepSeconds = -1
+    private val sleepCheck = Runnable {
+        sleepCheckScheduled = false
+        scheduledSleepSeconds = -1
+        if (canSleep()) enterSleep() else updateSleepTimer()
+    }
 
     private val panelRoot = FrameLayout(context)
     private val panelCard = FrameLayout(context)
@@ -98,8 +114,8 @@ class FloatingOverlayController(
     private val panelDragHandle = View(context)
     private val panelResizeHandle = TextView(context)
     private var panelParams = WindowManager.LayoutParams(
-        dp(294),
-        dp(128),
+        dp(280),
+        dp(112),
         overlayType(),
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -107,7 +123,7 @@ class FloatingOverlayController(
         PixelFormat.TRANSLUCENT,
     ).apply {
         gravity = Gravity.TOP or Gravity.START
-        x = (screenWidth - dp(294) - dp(10)).coerceAtLeast(dp(4))
+        x = (screenWidth - dp(280) - dp(10)).coerceAtLeast(dp(4))
         y = (screenHeight * 0.62f).toInt()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             layoutInDisplayCutoutMode =
@@ -117,8 +133,8 @@ class FloatingOverlayController(
     private var panelVisible = false
     private var panelAttached = false
     private var panelPositioned = false
-    private var panelWidthPx = dp(294)
-    private var panelHeightPx = dp(128)
+    private var panelWidthPx = dp(280)
+    private var panelHeightPx = dp(112)
 
     private val actionWindows = mutableMapOf<ActionKind, ActionWindow>()
     private var actionsVisible = false
@@ -139,6 +155,7 @@ class FloatingOverlayController(
         return runCatching {
             applyOrbSize(orbSize())
             ensurePanelWindow()
+            sleeping = false
             orbBaseAlpha = state.orbAlpha.coerceIn(0.35f, 1f)
             orbRoot.alpha = orbBaseAlpha
             orbRoot.scaleX = 0.7f
@@ -151,6 +168,7 @@ class FloatingOverlayController(
                 .setDuration(220L)
                 .setInterpolator(DecelerateInterpolator())
                 .start()
+            markInteraction()
             true
         }.onFailure { Log.w(TAG, "add orb failed", it) }
             .getOrDefault(false)
@@ -158,6 +176,9 @@ class FloatingOverlayController(
 
     fun hideOrb() {
         if (!orbAttached) return
+        cancelSleepTimer()
+        cancelOrbAnimator()
+        sleeping = false
         hideActions()
         hidePanel(notify = false)
         hideInput()
@@ -172,9 +193,10 @@ class FloatingOverlayController(
             return
         }
         if (!orbAttached && !showOrb()) return
+        if (sleeping && (isBusy() || newState.expanded)) wakeOrb(showActions = false)
         if (orbSize() != orbSizePx) applyOrbSize(orbSize())
         orbBaseAlpha = newState.orbAlpha.coerceIn(0.35f, 1f)
-        orbRoot.alpha = orbBaseAlpha
+        if (!sleeping) orbRoot.alpha = orbBaseAlpha
         modeBadge.text = if (newState.mode == FloatingMode.AUTO) "连" else "轻"
         modeBadge.contentDescription =
             if (newState.mode == FloatingMode.AUTO) "连播模式" else "轻享模式"
@@ -198,23 +220,29 @@ class FloatingOverlayController(
 
         renderActions()
         renderPanel()
+        updateSleepTimer()
     }
 
     fun showPanel(notify: Boolean = false) {
         if (!orbAttached || panelVisible) return
         ensurePanelWindow()
         if (!panelAttached) return
+        cancelSleepTimer()
         panelVisible = true
         panelRoot.animate().cancel()
+        val minWidth = dp(state.panelMinWidthDp.coerceIn(150, 260))
+        val minHeight = dp(state.panelMinHeightDp.coerceIn(64, 160))
+        panelWidthPx = panelWidthPx.coerceAtLeast(minWidth)
+        panelHeightPx = panelHeightPx.coerceAtLeast(minHeight)
         if (!panelPositioned) {
             val orbCenterX = orbParams.x + orbParams.width / 2
             panelParams.x = if (orbCenterX < screenWidth / 2) {
-                (screenWidth - panelWidthPx - dp(12)).coerceAtLeast(dp(8))
+                (screenWidth - panelWidthPx - dp(8)).coerceAtLeast(dp(6))
             } else {
-                dp(12)
+                dp(8)
             }
-            panelParams.y = (screenHeight - navBar - panelHeightPx - dp(60))
-                .coerceAtLeast(statusBar + dp(12))
+            panelParams.y = (screenHeight - navBar - panelHeightPx - dp(36))
+                .coerceAtLeast(statusBar + dp(8))
         }
         panelParams.width = panelWidthPx
         panelParams.height = panelHeightPx
@@ -258,6 +286,7 @@ class FloatingOverlayController(
                     runCatching {
                         windowManager.updateViewLayout(panelRoot, hiddenPanelParams())
                     }
+                    markInteraction()
                 }
             }
             .start()
@@ -265,6 +294,7 @@ class FloatingOverlayController(
 
     fun showInput(prefill: String?) {
         if (inputAttached) return
+        cancelSleepTimer()
         actionsVisible = false
         hideActions()
         hidePanel(notify = true)
@@ -394,9 +424,13 @@ class FloatingOverlayController(
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(root.windowToken, 0)
         runCatching { windowManager.removeViewImmediate(root) }
+        if (orbAttached) markInteraction()
     }
 
     fun dismiss() {
+        cancelSleepTimer()
+        cancelOrbAnimator()
+        sleeping = false
         hideInput()
         hideActions()
         hidePanel(notify = false)
@@ -484,7 +518,7 @@ class FloatingOverlayController(
 
     private fun buildPanel() {
         panelRoot.setBackgroundColor(Color.TRANSPARENT)
-        panelCard.setPadding(dp(12), dp(9), dp(12), dp(8))
+        panelCard.setPadding(dp(9), dp(7), dp(9), dp(6))
         val header = FrameLayout(context)
         panelDragHandle.background = GradientDrawable().apply {
             cornerRadius = dp(2).toFloat()
@@ -493,30 +527,30 @@ class FloatingOverlayController(
         panelDragArea.setBackgroundColor(Color.TRANSPARENT)
         panelDragArea.addView(
             panelDragHandle,
-            FrameLayout.LayoutParams(dp(32), dp(3), Gravity.CENTER),
+            FrameLayout.LayoutParams(dp(30), dp(3), Gravity.CENTER),
         )
         header.addView(
             panelDragArea,
             FrameLayout.LayoutParams(
-                dp(104),
-                dp(28),
+                dp(64),
+                dp(26),
                 Gravity.CENTER_HORIZONTAL or Gravity.TOP,
             ),
         )
         panelClose.text = "×"
         panelClose.setTextColor(0xFFD6DCE5.toInt())
-        panelClose.textSize = 17f
+        panelClose.textSize = 16f
         panelClose.gravity = Gravity.CENTER
         panelClose.contentDescription = "关闭浮窗"
         panelClose.setShadowLayer(3f, 0f, 1f, Color.argb(180, 0, 0, 0))
         panelClose.setOnClickListener { hidePanel(notify = true) }
         header.addView(
             panelClose,
-            FrameLayout.LayoutParams(dp(34), dp(30), Gravity.END or Gravity.TOP),
+            FrameLayout.LayoutParams(dp(32), dp(26), Gravity.END or Gravity.TOP),
         )
         panelCard.addView(
             header,
-            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(28)),
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(26)),
         )
         val scroll = ScrollView(context).apply {
             isFillViewport = true
@@ -525,12 +559,12 @@ class FloatingOverlayController(
         }
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(2), 0, dp(10))
+            setPadding(0, dp(1), 0, dp(8))
         }
         panelMessage.setTextColor(Color.argb(235, 235, 240, 246))
-        panelMessage.textSize = 11f
+        panelMessage.textSize = 10.5f
         panelMessage.maxLines = 3
-        panelMessage.setPadding(0, 0, 0, dp(3))
+        panelMessage.setPadding(0, 0, 0, dp(2))
         panelMessage.setShadowLayer(3f, 0f, 1f, Color.argb(170, 0, 0, 0))
         column.addView(panelMessage)
         panelProgress.max = 1000
@@ -548,12 +582,12 @@ class FloatingOverlayController(
             },
         )
         panelQueue.setTextColor(Color.argb(185, 185, 193, 204))
-        panelQueue.textSize = 9.5f
+        panelQueue.textSize = 9f
         panelQueue.visibility = View.GONE
         panelQueue.setShadowLayer(3f, 0f, 1f, Color.argb(160, 0, 0, 0))
         column.addView(panelQueue)
         panelLink.setTextColor(Color.argb(185, 143, 205, 212))
-        panelLink.textSize = 9.5f
+        panelLink.textSize = 9f
         panelLink.maxLines = 1
         panelLink.visibility = View.GONE
         panelLink.setPadding(0, dp(3), 0, 0)
@@ -566,19 +600,19 @@ class FloatingOverlayController(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ).apply {
-                topMargin = dp(25)
-                bottomMargin = dp(4)
+                topMargin = dp(27)
+                bottomMargin = dp(3)
             },
         )
         panelResizeHandle.text = "◢"
         panelResizeHandle.setTextColor(Color.argb(150, 220, 228, 238))
-        panelResizeHandle.textSize = 11f
+        panelResizeHandle.textSize = 10.5f
         panelResizeHandle.gravity = Gravity.CENTER
         panelResizeHandle.contentDescription = "调整浮窗大小"
         panelResizeHandle.setShadowLayer(3f, 0f, 1f, Color.argb(160, 0, 0, 0))
         panelCard.addView(
             panelResizeHandle,
-            FrameLayout.LayoutParams(dp(36), dp(30), Gravity.END or Gravity.BOTTOM),
+            FrameLayout.LayoutParams(dp(32), dp(24), Gravity.END or Gravity.BOTTOM),
         )
         panelRoot.addView(
             panelCard,
@@ -593,10 +627,21 @@ class FloatingOverlayController(
         orbCircle.isClickable = true
         orbCircle.isFocusable = true
         orbCircle.contentDescription = "Kit 浮球"
-        orbCircle.setOnClickListener { toggleActions() }
+        orbCircle.setOnClickListener {
+            when {
+                sleeping -> wakeOrb()
+                orbAnimator != null -> Unit
+                else -> {
+                    markInteraction()
+                    moveIntoSafeArea { toggleActions() }
+                }
+            }
+        }
         orbCircle.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    cancelSleepTimer()
+                    cancelOrbAnimator()
                     downRawX = event.rawX
                     downRawY = event.rawY
                     downOrbX = orbParams.x
@@ -612,16 +657,21 @@ class FloatingOverlayController(
                         (kotlin.math.abs(dx) > touchSlop || kotlin.math.abs(dy) > touchSlop)
                     ) {
                         draggingOrb = true
+                        if (sleeping) wakeFromDrag()
                     }
                     if (draggingOrb) {
+                        if (actionsVisible) {
+                            actionsVisible = false
+                            hideActions()
+                        }
+                        val minVisible = dp(24)
                         orbParams.x = (downOrbX + dx.toInt()).coerceIn(
-                            dp(48),
-                            (screenWidth - orbParams.width - dp(84)).coerceAtLeast(dp(48)),
+                            -(orbParams.width - minVisible),
+                            screenWidth - minVisible,
                         )
                         orbParams.y = (downOrbY + dy.toInt()).coerceIn(
-                            statusBar + dp(48),
-                            (screenHeight - navBar - orbParams.height - dp(84))
-                                .coerceAtLeast(statusBar + dp(48)),
+                            -(orbParams.height - minVisible),
+                            screenHeight - minVisible,
                         )
                         runCatching { windowManager.updateViewLayout(orbRoot, orbParams) }
                         updateActionPositions()
@@ -630,7 +680,13 @@ class FloatingOverlayController(
                 }
 
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (!draggingOrb) orbCircle.performClick()
+                    if (!draggingOrb) {
+                        if (event.actionMasked == MotionEvent.ACTION_UP) {
+                            orbCircle.performClick()
+                        }
+                    } else {
+                        markInteraction()
+                    }
                     draggingOrb = false
                     true
                 }
@@ -645,6 +701,7 @@ class FloatingOverlayController(
         panelDragArea.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    markInteraction()
                     panelPositioned = true
                     downRawX = event.rawX
                     downRawY = event.rawY
@@ -672,6 +729,7 @@ class FloatingOverlayController(
         panelResizeHandle.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    markInteraction()
                     downRawX = event.rawX
                     downRawY = event.rawY
                     downOrbX = panelWidthPx
@@ -680,10 +738,12 @@ class FloatingOverlayController(
                 }
 
                 MotionEvent.ACTION_MOVE -> {
+                    val minWidth = dp(state.panelMinWidthDp.coerceIn(150, 260))
+                    val minHeight = dp(state.panelMinHeightDp.coerceIn(64, 160))
                     panelWidthPx = (downOrbX + (event.rawX - downRawX).toInt())
-                        .coerceIn(dp(210), screenWidth - dp(8))
+                        .coerceIn(minWidth, screenWidth - dp(8))
                     panelHeightPx = (downOrbY + (event.rawY - downRawY).toInt())
-                        .coerceIn(dp(96), (screenHeight * 0.55f).toInt())
+                        .coerceIn(minHeight, (screenHeight * 0.55f).toInt())
                     panelParams.width = panelWidthPx
                     panelParams.height = panelHeightPx
                     panelParams.x =
@@ -703,6 +763,7 @@ class FloatingOverlayController(
     }
 
     private fun toggleActions() {
+        markInteraction()
         actionsVisible = !actionsVisible
         orbCircle.animate()
             .scaleX(0.9f)
@@ -716,6 +777,7 @@ class FloatingOverlayController(
         if (actionsVisible && !panelVisible && hasPanelInfo(state)) {
             showPanel(notify = true)
         }
+        updateSleepTimer()
     }
 
     private fun renderActions() {
@@ -726,14 +788,14 @@ class FloatingOverlayController(
         val specs = linkedMapOf<ActionKind, ActionSpec>()
         when {
             state.needsVerification -> specs[ActionKind.PRIMARY] = ActionSpec(
-                label = "完成验证",
+                description = "完成验证",
                 icon = R.drawable.ic_float_analyze,
                 accent = true,
                 onClick = onPrimaryAction,
             )
 
             state.needsLogin -> specs[ActionKind.PRIMARY] = ActionSpec(
-                label = "打开登录",
+                description = "打开登录",
                 icon = R.drawable.ic_float_open,
                 accent = true,
                 onClick = onPrimaryAction,
@@ -741,7 +803,7 @@ class FloatingOverlayController(
 
             state.promptVisible && !state.clipboardLink.isNullOrBlank() ->
                 specs[ActionKind.PRIMARY] = ActionSpec(
-                    label = "解析剪贴板",
+                    description = "解析剪贴板",
                     icon = R.drawable.ic_float_analyze,
                     accent = true,
                     onClick = onPrimaryAction,
@@ -749,40 +811,29 @@ class FloatingOverlayController(
 
             state.mode == FloatingMode.AUTO &&
                 !state.appForeground &&
-                state.foreground.isDouyin &&
-                !isBusy() -> specs[ActionKind.PRIMARY] = ActionSpec(
-                label = "分析当前视频",
+                state.foreground.isDouyin -> specs[ActionKind.PRIMARY] = ActionSpec(
+                description = "分析当前视频",
                 icon = R.drawable.ic_float_analyze,
                 accent = true,
+                enabled = !state.automationBusy,
                 onClick = onAutoAction,
             )
         }
         specs[ActionKind.INPUT] = ActionSpec(
-            label = null,
+            description = "输入链接",
             icon = R.drawable.ic_float_input,
             accent = false,
             onClick = { onOpenInput(state.clipboardLink) },
         )
         specs[ActionKind.OPEN_APP] = ActionSpec(
-            label = null,
+            description = "打开 DouyinKit",
             icon = R.drawable.ic_float_open,
             accent = false,
             onClick = onOpenApp,
         )
-        if (state.mode == FloatingMode.AUTO &&
-            !state.automationBusy &&
-            (isBusy() || state.queueSize > 0)
-        ) {
-            specs[ActionKind.NEXT] = ActionSpec(
-                label = "下一个",
-                icon = R.drawable.ic_float_next,
-                accent = false,
-                onClick = onAutoAction,
-            )
-        }
         if (isBusy()) {
             specs[ActionKind.STOP] = ActionSpec(
-                label = "停止",
+                description = "停止",
                 icon = R.drawable.ic_float_stop,
                 accent = false,
                 danger = true,
@@ -791,7 +842,7 @@ class FloatingOverlayController(
         }
         if (state.resultReady) {
             specs[ActionKind.RESULT] = ActionSpec(
-                label = "结果",
+                description = "结果",
                 icon = R.drawable.ic_float_result,
                 accent = false,
                 onClick = onOpenApp,
@@ -826,11 +877,12 @@ class FloatingOverlayController(
             ActionKind.PRIMARY -> -90.0
             ActionKind.INPUT -> 180.0
             ActionKind.OPEN_APP -> 0.0
-            ActionKind.NEXT -> 142.0
-            ActionKind.STOP -> 38.0
+            ActionKind.STOP -> 35.0
             ActionKind.RESULT -> 90.0
-        }
-        val radius = orbParams.width / 2f + dp(8) + kotlin.math.max(width, height) / 2f
+        } + state.actionAngleOffset.coerceIn(-60, 60)
+        val radius = orbParams.width / 2f +
+            dp(state.actionDistanceDp.coerceIn(0, 24)) +
+            kotlin.math.max(width, height) / 2f
         val rad = Math.toRadians(angle)
         val x = (centerX + kotlin.math.cos(rad) * radius - width / 2).toInt()
         val y = (centerY + kotlin.math.sin(rad) * radius - height / 2).toInt()
@@ -842,6 +894,20 @@ class FloatingOverlayController(
     }
 
     private fun renderPanel() {
+        val minWidth = dp(state.panelMinWidthDp.coerceIn(150, 260))
+        val minHeight = dp(state.panelMinHeightDp.coerceIn(64, 160))
+        if (panelWidthPx < minWidth || panelHeightPx < minHeight) {
+            panelWidthPx = panelWidthPx.coerceAtLeast(minWidth)
+            panelHeightPx = panelHeightPx.coerceAtLeast(minHeight)
+            panelParams.width = panelWidthPx
+            panelParams.height = panelHeightPx
+            if (panelVisible) {
+                panelParams.x = panelParams.x.coerceAtMost(
+                    (screenWidth - panelWidthPx - dp(2)).coerceAtLeast(dp(2)),
+                )
+                runCatching { windowManager.updateViewLayout(panelRoot, panelParams) }
+            }
+        }
         applyPanelStyle(panelParams, state, force = false)
         val focused = isBusy()
         panelMessage.text = state.message
@@ -884,18 +950,163 @@ class FloatingOverlayController(
             state.phase == FloatingPhase.DOWNLOADING ||
             state.automationBusy
 
+    private fun canSleep(seconds: Int = state.idleTimeoutSeconds.coerceIn(0, 180)): Boolean =
+        orbAttached && !sleeping && seconds > 0 &&
+            !isBusy() && !panelVisible && !actionsVisible && !inputAttached
+
+    private fun updateSleepTimer() {
+        val seconds = state.idleTimeoutSeconds.coerceIn(0, 180)
+        if (!canSleep(seconds)) {
+            cancelSleepTimer()
+            return
+        }
+        if (sleepCheckScheduled && scheduledSleepSeconds == seconds) return
+        cancelSleepTimer()
+        scheduledSleepSeconds = seconds
+        sleepCheckScheduled = true
+        orbRoot.postDelayed(sleepCheck, seconds * 1000L)
+    }
+
+    private fun cancelSleepTimer() {
+        if (sleepCheckScheduled) orbRoot.removeCallbacks(sleepCheck)
+        sleepCheckScheduled = false
+        scheduledSleepSeconds = -1
+    }
+
+    private fun markInteraction() {
+        cancelSleepTimer()
+        updateSleepTimer()
+    }
+
+    private fun enterSleep() {
+        if (!canSleep()) return
+        cancelSleepTimer()
+        sleeping = true
+        preSleepX = orbParams.x
+        preSleepY = orbParams.y
+        preSleepAlpha = orbRoot.alpha.coerceIn(0.2f, 1f)
+        val targetX = if (orbParams.x + orbParams.width / 2 < screenWidth / 2) {
+            0
+        } else {
+            screenWidth - orbParams.width
+        }
+        val targetY = orbParams.y.coerceIn(
+            statusBar + dp(8),
+            (screenHeight - navBar - orbParams.height - dp(8))
+                .coerceAtLeast(statusBar + dp(8)),
+        )
+        val sleepAlpha = (orbBaseAlpha * 0.45f).coerceIn(0.22f, 0.55f)
+        animateOrbTo(targetX, targetY, sleepAlpha, 320L)
+    }
+
+    private fun wakeOrb(showActions: Boolean = true) {
+        if (!sleeping) return
+        sleeping = false
+        cancelSleepTimer()
+        val target = if (showActions) safeOrbTarget() else preSleepX to preSleepY
+        animateOrbTo(target.first, target.second, orbBaseAlpha, 260L) {
+            markInteraction()
+            if (showActions && !actionsVisible) toggleActions()
+        }
+    }
+
+    private fun wakeFromDrag() {
+        if (!sleeping) return
+        sleeping = false
+        cancelOrbAnimator()
+        orbRoot.alpha = orbBaseAlpha
+    }
+
+    private fun animateOrbTo(
+        targetX: Int,
+        targetY: Int,
+        targetAlpha: Float,
+        duration: Long,
+        onEnd: (() -> Unit)? = null,
+    ) {
+        cancelOrbAnimator()
+        if (!orbAttached) {
+            onEnd?.invoke()
+            return
+        }
+        val startX = orbParams.x
+        val startY = orbParams.y
+        val startAlpha = orbRoot.alpha
+        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            this.duration = duration
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { valueAnimator ->
+                val fraction = valueAnimator.animatedFraction
+                orbParams.x = (startX + (targetX - startX) * fraction).toInt()
+                orbParams.y = (startY + (targetY - startY) * fraction).toInt()
+                orbRoot.alpha = startAlpha + (targetAlpha - startAlpha) * fraction
+                runCatching { windowManager.updateViewLayout(orbRoot, orbParams) }
+                updateActionPositions()
+            }
+        }
+        orbAnimator = animator
+        animator.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                if (orbAnimator !== animation) return
+                orbAnimator = null
+                onEnd?.invoke()
+            }
+        })
+        animator.start()
+    }
+
+    private fun cancelOrbAnimator() {
+        val animator = orbAnimator ?: return
+        orbAnimator = null
+        animator.cancel()
+    }
+
+    private fun safeOrbTarget(): Pair<Int, Int> {
+        val extent = orbParams.width / 2 +
+            dp(state.actionDistanceDp.coerceIn(0, 24)) +
+            dp(42) + dp(4)
+        val minCenterX = extent
+        val maxCenterX = screenWidth - extent
+        val minCenterY = statusBar + extent
+        val maxCenterY = screenHeight - navBar - extent
+        val centerX = if (minCenterX >= maxCenterX) {
+            screenWidth / 2
+        } else {
+            (orbParams.x + orbParams.width / 2).coerceIn(minCenterX, maxCenterX)
+        }
+        val centerY = if (minCenterY >= maxCenterY) {
+            (statusBar + screenHeight - navBar) / 2
+        } else {
+            (orbParams.y + orbParams.height / 2).coerceIn(minCenterY, maxCenterY)
+        }
+        return (centerX - orbParams.width / 2) to (centerY - orbParams.height / 2)
+    }
+
+    private fun moveIntoSafeArea(onDone: () -> Unit) {
+        val target = safeOrbTarget()
+        if (kotlin.math.abs(target.first - orbParams.x) <= dp(1) &&
+            kotlin.math.abs(target.second - orbParams.y) <= dp(1)
+        ) {
+            onDone()
+            return
+        }
+        animateOrbTo(target.first, target.second, orbRoot.alpha, 220L, onDone)
+    }
+
     private fun applyOrbSize(sizePx: Int) {
+        cancelOrbAnimator()
         orbSizePx = sizePx
         val windowSize = sizePx + dp(18)
         orbParams.width = windowSize
         orbParams.height = windowSize
+        val minVisible = dp(24)
         orbParams.x = orbParams.x.coerceIn(
-            dp(4),
-            (screenWidth - windowSize - dp(4)).coerceAtLeast(dp(4)),
+            -(windowSize - minVisible),
+            screenWidth - minVisible,
         )
         orbParams.y = orbParams.y.coerceIn(
-            statusBar + dp(4),
-            (screenHeight - navBar - windowSize - dp(4)).coerceAtLeast(statusBar + dp(4)),
+            -(windowSize - minVisible),
+            screenHeight - minVisible,
         )
         orbRoot.layoutParams = FrameLayout.LayoutParams(windowSize, windowSize)
         (orbCircle.layoutParams as? FrameLayout.LayoutParams)?.let {
@@ -958,7 +1169,7 @@ class FloatingOverlayController(
             opacity = state.panelOpacity,
             style = state.panelStyle,
             frost = state.panelBlur,
-            cornerRadius = dp(20).toFloat(),
+            cornerRadius = dp(18).toFloat(),
             density = density,
         )
         if (panelAttached && panelVisible) {
@@ -1042,7 +1253,7 @@ class FloatingOverlayController(
     }
 
     private data class ActionSpec(
-        val label: String?,
+        val description: String?,
         val icon: Int,
         val accent: Boolean,
         val danger: Boolean = false,
@@ -1050,13 +1261,12 @@ class FloatingOverlayController(
         val onClick: () -> Unit,
     )
 
-    private enum class ActionKind { PRIMARY, INPUT, OPEN_APP, NEXT, STOP, RESULT }
+    private enum class ActionKind { PRIMARY, INPUT, OPEN_APP, STOP, RESULT }
 
     private inner class ActionWindow(private val kind: ActionKind) {
         val root = FrameLayout(context)
         private val content = LinearLayout(context)
         private val icon = ImageView(context)
-        private val label = TextView(context)
         private var spec: ActionSpec? = null
         var isShown = false
             private set
@@ -1083,7 +1293,10 @@ class FloatingOverlayController(
             content.gravity = Gravity.CENTER
             content.isClickable = true
             content.isFocusable = true
-            content.setOnClickListener { spec?.onClick?.invoke() }
+            content.setOnClickListener {
+                markInteraction()
+                spec?.onClick?.invoke()
+            }
             root.addView(
                 content,
                 FrameLayout.LayoutParams(
@@ -1098,7 +1311,7 @@ class FloatingOverlayController(
             val previous = spec
             spec = newSpec
             if (previous != null &&
-                previous.label == newSpec.label &&
+                previous.description == newSpec.description &&
                 previous.icon == newSpec.icon &&
                 previous.accent == newSpec.accent &&
                 previous.danger == newSpec.danger &&
@@ -1108,75 +1321,32 @@ class FloatingOverlayController(
                 content.alpha = if (newSpec.enabled) 1f else 0.5f
                 return
             }
-            content.background = if (kind == ActionKind.PRIMARY) {
-                null
-            } else {
-                actionButtonBackground(newSpec.accent, newSpec.danger)
-            }
+            content.background = actionButtonBackground(newSpec.accent, newSpec.danger)
             content.isEnabled = newSpec.enabled
             content.alpha = if (newSpec.enabled) 1f else 0.5f
-            content.contentDescription = newSpec.label ?: when (kind) {
+            content.contentDescription = newSpec.description ?: when (kind) {
                 ActionKind.INPUT -> "输入链接"
                 ActionKind.OPEN_APP -> "打开 DouyinKit"
-                else -> "浮球操作"
+                ActionKind.STOP -> "停止"
+                ActionKind.RESULT -> "结果"
+                ActionKind.PRIMARY -> "浮球操作"
             }
             (icon.parent as? android.view.ViewGroup)?.removeView(icon)
-            (label.parent as? android.view.ViewGroup)?.removeView(label)
             content.removeAllViews()
-            val labeled = !newSpec.label.isNullOrBlank()
             val size = dp(42)
-            if (labeled && kind == ActionKind.PRIMARY) {
-                icon.setImageResource(newSpec.icon)
-                icon.setColorFilter(Color.WHITE)
-                val circle = FrameLayout(context).apply {
-                    background = actionButtonBackground(newSpec.accent, newSpec.danger)
-                    addView(
-                        icon,
-                        FrameLayout.LayoutParams(dp(19), dp(19), Gravity.CENTER),
-                    )
-                }
-                content.addView(circle, LinearLayout.LayoutParams(size, size))
-                label.text = newSpec.label
-                label.setTextColor(Color.WHITE)
-                label.textSize = 10f
-                label.typeface = Typeface.DEFAULT_BOLD
-                label.maxLines = 1
-                label.setPadding(dp(6), 0, dp(2), 0)
-                label.setShadowLayer(4f, 0f, 1f, Color.argb(220, 0, 0, 0))
-                content.addView(label, LinearLayout.LayoutParams(-2, size))
-                heightPx = size
-            } else if (labeled) {
-                icon.setImageResource(newSpec.icon)
-                icon.setColorFilter(Color.WHITE)
-                content.addView(
-                    icon,
-                    LinearLayout.LayoutParams(dp(17), dp(17)).apply {
-                        marginStart = dp(10)
-                    },
-                )
-                label.text = newSpec.label
-                label.setTextColor(Color.WHITE)
-                label.textSize = 10f
-                label.typeface = Typeface.DEFAULT_BOLD
-                label.maxLines = 1
-                label.setPadding(dp(5), 0, dp(10), 0)
-                content.addView(label, LinearLayout.LayoutParams(-2, size))
-                heightPx = size
-            } else {
-                icon.setImageResource(newSpec.icon)
-                icon.setColorFilter(Color.WHITE)
-                content.addView(icon, LinearLayout.LayoutParams(dp(20), dp(20)))
-                heightPx = size
-            }
-            content.minimumWidth = if (labeled) 0 else size
+            icon.setImageResource(newSpec.icon)
+            icon.setColorFilter(Color.WHITE)
+            content.addView(icon, LinearLayout.LayoutParams(dp(20), dp(20)))
+            content.minimumWidth = size
             content.minimumHeight = size
-            widthPx = if (labeled) dp(110) else size
+            widthPx = size
+            heightPx = size
             root.measure(
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
             )
-            widthPx = root.measuredWidth.coerceAtLeast(widthPx)
-            heightPx = root.measuredHeight.coerceAtLeast(heightPx)
+            widthPx = root.measuredWidth.coerceAtLeast(size)
+            heightPx = root.measuredHeight.coerceAtLeast(size)
         }
 
         fun show(startDelay: Long) {

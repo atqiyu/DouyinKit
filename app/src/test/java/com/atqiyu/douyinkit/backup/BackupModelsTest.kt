@@ -41,6 +41,11 @@ class BackupModelsTest {
             floatingPanelColor = FloatingPanelColor.PLUM,
             floatingPanelBlur = 8,
             floatingShowClipboard = false,
+            floatingActionDistanceDp = 14,
+            floatingActionAngleOffset = 20,
+            floatingPanelMinWidthDp = 180,
+            floatingPanelMinHeightDp = 80,
+            floatingIdleTimeoutSeconds = 60,
         )
         val encoded = json.encodeToString(
             ConfigFile.serializer(),

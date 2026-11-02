@@ -48,6 +48,11 @@ data class FloatingUiState(
     val panelColorArgb: Long = 0xFF10141C,
     val panelBlur: Int = 18,
     val showClipboard: Boolean = true,
+    val actionDistanceDp: Int = 8,
+    val actionAngleOffset: Int = 0,
+    val panelMinWidthDp: Int = 160,
+    val panelMinHeightDp: Int = 64,
+    val idleTimeoutSeconds: Int = 45,
 )
 
 object DouyinPackages {

@@ -45,7 +45,7 @@ class DouyinAccessibilityService : AccessibilityService() {
         if (DouyinPackages.of(packageName) != null) {
             val texts = event.text
             val label = when {
-                texts == null || texts.isEmpty() -> event.contentDescription?.toString()
+                texts.isEmpty() -> event.contentDescription?.toString()
                 texts.size == 1 -> texts[0]?.toString()
                 else -> "${texts[0]} ${texts[1]}"
             }

@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -250,7 +251,6 @@ fun FloatingBallSettings() {
                     valueText = "${current.floatingOrbSizeDp} dp",
                     value = current.floatingOrbSizeDp.toFloat(),
                     valueRange = 38f..72f,
-                    steps = 8,
                     onValueChange = { value ->
                         scope.launch {
                             context.appContainer.settingsRepository.setFloatingOrbSize(value.toInt())
@@ -262,12 +262,47 @@ fun FloatingBallSettings() {
                     valueText = "${(current.floatingOrbAlpha * 100).toInt()}%",
                     value = current.floatingOrbAlpha,
                     valueRange = 0.35f..1f,
-                    steps = 8,
                     onValueChange = { value ->
                         scope.launch {
                             context.appContainer.settingsRepository.setFloatingOrbAlpha(value)
                         }
                     },
+                )
+                Text(
+                    text = "按钮布局",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+                )
+                FloatingSliderRow(
+                    title = "按钮距离",
+                    valueText = "${current.floatingActionDistanceDp} dp",
+                    value = current.floatingActionDistanceDp.toFloat(),
+                    valueRange = 0f..24f,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository
+                                .setFloatingActionDistance(value.toInt())
+                        }
+                    },
+                )
+                FloatingSliderRow(
+                    title = "按钮整体旋转",
+                    valueText = "${current.floatingActionAngleOffset}°",
+                    value = current.floatingActionAngleOffset.toFloat(),
+                    valueRange = -60f..60f,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository
+                                .setFloatingActionAngleOffset(value.toInt())
+                        }
+                    },
+                )
+                Text(
+                    "0° 时分析按钮在浮球正上方；距离控制按钮环与浮球之间的空隙。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 2.dp),
                 )
                 Text(
                     text = "浮窗背景",
@@ -307,7 +342,6 @@ fun FloatingBallSettings() {
                     valueText = "${(current.floatingPanelOpacity * 100).toInt()}%",
                     value = current.floatingPanelOpacity,
                     valueRange = 0.2f..1f,
-                    steps = 8,
                     onValueChange = { value ->
                         scope.launch {
                             context.appContainer.settingsRepository.setFloatingPanelOpacity(value)
@@ -367,7 +401,6 @@ fun FloatingBallSettings() {
                     },
                     value = current.floatingPanelBlur.toFloat(),
                     valueRange = 0f..25f,
-                    steps = 8,
                     enabled = current.floatingPanelStyle == FloatingPanelStyle.GLASS,
                     onValueChange = { value ->
                         scope.launch {
@@ -378,6 +411,70 @@ fun FloatingBallSettings() {
                 )
                 Text(
                     "磨砂质感只绘制在浮窗自身内部，不会模糊屏幕其他区域。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+                Text(
+                    text = "浮窗尺寸边界",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+                )
+                FloatingSliderRow(
+                    title = "最小宽度",
+                    valueText = "${current.floatingPanelMinWidthDp} dp",
+                    value = current.floatingPanelMinWidthDp.toFloat(),
+                    valueRange = 150f..260f,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository
+                                .setFloatingPanelMinWidth(value.toInt())
+                        }
+                    },
+                )
+                FloatingSliderRow(
+                    title = "最小高度",
+                    valueText = "${current.floatingPanelMinHeightDp} dp",
+                    value = current.floatingPanelMinHeightDp.toFloat(),
+                    valueRange = 64f..160f,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository
+                                .setFloatingPanelMinHeight(value.toInt())
+                        }
+                    },
+                )
+                Text(
+                    "只限制缩小时的最小尺寸；最大可拖到屏幕边缘。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+                Text(
+                    text = "自动休眠",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+                )
+                FloatingSliderRow(
+                    title = "无操作后休眠",
+                    valueText = if (current.floatingIdleTimeoutSeconds == 0) {
+                        "关闭"
+                    } else {
+                        "${current.floatingIdleTimeoutSeconds} 秒"
+                    },
+                    value = current.floatingIdleTimeoutSeconds.toFloat(),
+                    valueRange = 0f..180f,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository
+                                .setFloatingIdleTimeout(value.toInt())
+                        }
+                    },
+                )
+                Text(
+                    "休眠时浮球移到最近的屏幕边缘并降低透明度，点击恢复；解析/下载、操作环或浮窗打开时不休眠。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 2.dp),
@@ -490,10 +587,14 @@ private fun FloatingSliderRow(
     valueText: String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
-    steps: Int,
     enabled: Boolean = true,
     onValueChange: (Float) -> Unit,
 ) {
+    var localValue by remember { mutableFloatStateOf(value) }
+    var dragging by remember { mutableStateOf(false) }
+    LaunchedEffect(value) {
+        if (!dragging) localValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -512,10 +613,15 @@ private fun FloatingSliderRow(
             )
         }
         Slider(
-            value = value.coerceIn(valueRange.start, valueRange.endInclusive),
-            onValueChange = onValueChange,
+            value = localValue.coerceIn(valueRange.start, valueRange.endInclusive),
+            onValueChange = { next ->
+                dragging = true
+                localValue = next
+                onValueChange(next)
+            },
+            onValueChangeFinished = { dragging = false },
             valueRange = valueRange,
-            steps = steps,
+            steps = 0,
             enabled = enabled,
         )
     }

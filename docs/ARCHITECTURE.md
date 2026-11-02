@@ -138,17 +138,22 @@ DataStore：
 
 - `FloatingAssistantService`：`specialUse` 前台服务，持有悬浮球、环绕操作窗口、独立信息浮窗、
   输入框、剪贴板监听、`FloatingParseQueue` 和常驻通知；`SYSTEM_ALERT_WINDOW` 使其能在其他应用上层显示。
-  操作按钮是独立的小窗口，以便从浮球弹出并跟随拖动；信息浮窗先于浮球加入 WindowManager，
-  保持浮球和操作按钮在面板之上，但面板背景不再请求系统模糊。
+  操作按钮是独立的小窗口，全部为 42dp 图标；点击浮球后从浮球弹出并跟随拖动。信息浮窗先于浮球加入
+  WindowManager，保持浮球和操作按钮在面板之上，但面板背景不再请求系统模糊。
+- `FloatingOverlayController` 的窗口位移由 `ValueAnimator` 驱动：边缘点击回移 220ms、休眠移动 320ms、
+  唤醒 260ms；按钮位置按浮球大小、可调距离和整体角度计算。空闲休眠由 `postDelayed` 检查，
+  不进行周期性 tick；操作环/输入框/浮窗/任务打开时取消。
 - `FrostedPanelDrawable`：面板背景由半透明底色、内部柔光、噪点磨砂和白色边缘在自身 bounds 内绘制；
   支持毛玻璃/半透明/完全透明/纯色。不使用 `FLAG_BLUR_BEHIND`，因为部分 OEM 会把它扩展到整屏。
+  面板默认 280×112dp，最小 150×64dp，最小宽高由设置控制。
 - `DouyinAccessibilityService`：用户手动开启的无障碍服务；只读取抖音/抖音极速版窗口，维护前台状态，
   在连播模式中点击“分享 → 分享链接”。不处理验证码，不导出页面内容。前台判定以活动窗口包名为准，
-  内容变化事件做 400ms 节流，避免后台窗口的残留事件把桌面误判成抖音。
+  内容变化事件做 800ms 节流，避免后台窗口的残留事件把桌面误判成抖音。
 - `ClipboardFocusReader`：Android 10+ 后台剪贴板限制的补救。分享复制后短暂创建 1×1 可聚焦悬浮窗，
   读取剪贴板后立即移除，把焦点还给抖音。
 - 浮球状态点只表示前台应用（抖音/极速版绿色，其他灰色；无障碍未开启时空心灰环）；
   模式用图标底部“轻/连”徽标表示；浮球外圈 `OrbProgressRing` 显示解析扫描或下载进度。
+  连播队列繁忙时仍保留“分析当前视频”，不再显示“下一个”；点击会继续自动分享并 enqueue。
 - `FloatingParseQueue`：复用 `DouyinWebViewEngine` + `ParseController`，WebView 挂在 1×1 隐藏窗口；
   一次只解析一个作品，解析后按默认值自动下载并等待 `DownloadRegistry` 终止，再处理队列下一项。
 - 安全验证/登录：验证状态把同一个 WebView 扩展为全屏页面；登录只提示手动打开。
