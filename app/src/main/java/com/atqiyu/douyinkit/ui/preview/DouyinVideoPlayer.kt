@@ -87,7 +87,7 @@ fun DouyinVideoPlayer(
     val context = LocalContext.current
     val isLocal = url.startsWith("content://") || url.startsWith("file://")
     val lifecycleOwner = LocalLifecycleOwner.current
-    var isPlaying by remember(url) { mutableStateOf(true) }
+    var isPlaying by remember(url) { mutableStateOf(false) }
     var isBuffering by remember(url) { mutableStateOf(true) }
     var position by remember(url) { mutableLongStateOf(0L) }
     var duration by remember(url) { mutableLongStateOf(0L) }
@@ -124,7 +124,10 @@ fun DouyinVideoPlayer(
             }
             setMediaSource(mediaSource)
             prepare()
-            playWhenReady = true
+            // Keep new players paused until the UI explicitly activates this work. Starting
+            // several pre-composed players with playWhenReady=true makes them steal audio focus
+            // from the visible one, which then pauses and never resumes.
+            playWhenReady = false
             addListener(
                 object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
@@ -185,11 +188,9 @@ fun DouyinVideoPlayer(
 
     LaunchedEffect(pause, player) {
         if (pause) {
-            // Covers both a page that is already playing and a pre-composed neighbour
-            // that is still preparing; pause() also clears playWhenReady.
             player.pause()
         } else if (player.playbackState != Player.STATE_ENDED) {
-            // The active work always starts automatically, including after a swipe.
+            // Every visible work starts automatically; only this player requests audio focus.
             player.play()
         }
     }

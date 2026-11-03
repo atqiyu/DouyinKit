@@ -59,6 +59,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -220,8 +221,9 @@ fun DownloadsScreen() {
 
     var gridModeOverride by rememberSaveable { mutableStateOf<Boolean?>(null) }
     val gridMode = gridModeOverride ?: loadedSettings?.downloadsGridView ?: true
-    var previewAwemeId by rememberSaveable { mutableStateOf<String?>(null) }
-    var previewInitialUri by remember { mutableStateOf<String?>(null) }
+    // Keep preview state out of the main screen composition: opening/closing the full-screen
+    // dialog should only recompose PreviewOverlay, not the whole downloads feed.
+    val previewRequest = remember { mutableStateOf<PreviewRequest?>(null) }
     var cleanupOpen by remember { mutableStateOf(false) }
     var partsGroup by remember { mutableStateOf<DownloadGroup?>(null) }
     var partsSelectionUri by remember { mutableStateOf<String?>(null) }
@@ -234,14 +236,6 @@ fun DownloadsScreen() {
     var moveGroup by remember { mutableStateOf<DownloadGroup?>(null) }
     var renameTarget by remember { mutableStateOf<DownloadCollectionEntity?>(null) }
     var deleteTarget by remember { mutableStateOf<DownloadCollectionEntity?>(null) }
-    val previewGroup = groups.firstOrNull { it.awemeId == previewAwemeId }
-    val previewGroups = remember(previewGroup, visibleGroups, groups) {
-        when {
-            previewGroup == null -> emptyList()
-            visibleGroups.any { it.awemeId == previewGroup.awemeId } -> visibleGroups
-            else -> listOf(previewGroup)
-        }
-    }
 
     val gridState = rememberLazyGridState()
     var loadImages by remember { mutableStateOf(true) }
@@ -309,8 +303,8 @@ fun DownloadsScreen() {
         scope.launch {
             group.tasks.forEach { repository.remove(it.id) }
         }
-        if (previewAwemeId == group.awemeId) {
-            previewAwemeId = null
+        if (previewRequest.value?.awemeId == group.awemeId) {
+            previewRequest.value = null
         }
     }
 
@@ -676,8 +670,7 @@ fun DownloadsScreen() {
                                         collectionName = item.collectionName,
                                         loadImage = loadImages,
                                         onClick = {
-                                            previewInitialUri = null
-                                            previewAwemeId = group.awemeId
+                                            previewRequest.value = PreviewRequest(group.awemeId)
                                         },
                                         onLongClick = {
                                             partsGroup = group
@@ -691,8 +684,7 @@ fun DownloadsScreen() {
                                         collectionName = item.collectionName,
                                         loadImage = loadImages,
                                         onClick = {
-                                            previewInitialUri = null
-                                            previewAwemeId = group.awemeId
+                                            previewRequest.value = PreviewRequest(group.awemeId)
                                         },
                                         onLongClick = {
                                             partsGroup = group
@@ -738,18 +730,12 @@ fun DownloadsScreen() {
         )
     }
 
-    if (previewGroup != null && previewGroups.isNotEmpty()) {
-        WorkPreviewDialog(
-            groups = previewGroups,
-            initialAwemeId = previewGroup.awemeId,
-            initialFileUri = previewInitialUri,
-            onDismiss = {
-                previewAwemeId = null
-                previewInitialUri = null
-            },
-            onRemoveGroup = { removeGroup(it) },
-        )
-    }
+    PreviewOverlay(
+        request = previewRequest,
+        groups = groups,
+        visibleGroups = visibleGroups,
+        onRemoveGroup = { removeGroup(it) },
+    )
 
     partsGroup?.let { group ->
         WorkPartsSheet(
@@ -765,8 +751,10 @@ fun DownloadsScreen() {
                 partsGroup = null
             },
             onAnalyze = { item ->
-                previewInitialUri = item.file.uri.toString()
-                previewAwemeId = group.awemeId
+                previewRequest.value = PreviewRequest(
+                    awemeId = group.awemeId,
+                    fileUri = item.file.uri.toString(),
+                )
                 partsGroup = null
             },
             onOpen = {
@@ -1485,4 +1473,35 @@ private fun EmptyFilteredDownloads(
             }
         }
     }
+}
+
+private data class PreviewRequest(
+    val awemeId: String,
+    val fileUri: String? = null,
+)
+
+/**
+ * Reads the preview request in its own composition so closing the full-screen preview does not
+ * invalidate the downloads feed. This keeps the return-to-grid transition light.
+ */
+@Composable
+private fun PreviewOverlay(
+    request: MutableState<PreviewRequest?>,
+    groups: List<DownloadGroup>,
+    visibleGroups: List<DownloadGroup>,
+    onRemoveGroup: (DownloadGroup) -> Unit,
+) {
+    val current = request.value ?: return
+    val group = groups.firstOrNull { it.awemeId == current.awemeId } ?: return
+    val previewGroups = remember(group, visibleGroups, groups) {
+        if (visibleGroups.any { it.awemeId == group.awemeId }) visibleGroups else listOf(group)
+    }
+    if (previewGroups.isEmpty()) return
+    WorkPreviewDialog(
+        groups = previewGroups,
+        initialAwemeId = group.awemeId,
+        initialFileUri = current.fileUri,
+        onDismiss = { request.value = null },
+        onRemoveGroup = onRemoveGroup,
+    )
 }

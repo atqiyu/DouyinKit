@@ -65,7 +65,8 @@ DownloadRequest (Aweme + kind + gear + options)
 - 下载页把任务聚合为 `DownloadGroup` 后，在内存中按 DataStore 的排序模式排序；合集成员关系独立存储在 Room，筛选时按 `awemeId → collectionId` 映射过滤作品组。删除合集只清除成员关系。
 - `DownloadFeed` 在排序后按日期/首字符/大小区间/文件数区间生成分组标题，同时应用搜索（标题/作者/标签/合集/ID/BGM）和日期筛选；`LibraryFeed` 使用同样思路，最近排序优先使用最近下载时间，未下载记录回退解析时间。
 - 列表性能：历史快照和下载任务在 `Dispatchers.Default` 解码；`LazyColumn`/`LazyVerticalGrid` 使用稳定 key 与 contentType；滚动期间新出现卡片的封面延迟到停止滚动后加载；封面固定请求尺寸，视频封面优先远程、失败回退本地帧。
-- 作品预览：`WorkPreviewDialog` 使用 `VerticalPager`（`beyondViewportPageCount = 1`）按下载页当前 feed 顺序切换作品；每页独立持有选中文件、图片分页、详情面板和播放状态，非当前页视频暂停；顶部关闭/详情/分享/打开以及底部作者信息都在页内，随作品切换自动更新。当前页视频和 LivePhoto 自动开始播放，`pause` 变为 false 时强制恢复播放，避免预组合页首次打开时不播放。`detailsOpen` 时禁用纵向 pager，返回键先关闭详情。视频/直播照片/BGM 均使用单作品循环，不自动跳到下一个。
+- 作品预览：`WorkPreviewDialog` 使用 `VerticalPager`（`beyondViewportPageCount = 1`）按下载页当前 feed 顺序切换作品；每页独立持有选中文件、图片分页、详情面板和播放状态。预组合播放器创建时 `playWhenReady = false`，非当前页保持暂停且不请求音频焦点；当前页在 `pause = false` 时主动 `play()`，因此首次打开和切换作品后都会自动播放，图文 BGM 也会自动循环。顶部关闭/详情/分享/打开以及底部作者信息都在页内，随作品切换自动更新。`detailsOpen` 时禁用纵向 pager，返回键先关闭详情。视频/直播照片/BGM 均使用单作品循环，不自动跳到下一个。
+- 预览状态：`DownloadsScreen` 把打开请求保存在独立的 `PreviewOverlay` 中，只有该层读取 `previewRequest`；关闭预览时不会让整个下载列表、合集芯片和卡片 feed 一起重组，从而降低返回下载页的掉帧。`detailsOpen` 由预览层管理，底层页面保持原状态。
 - 滚动进度由独立的 `ScrollProgressOverlay` 读取列表状态，避免滚动帧触发整个页面重组。发布构建启用 R8 + 资源压缩，并使用与历史安装包相同的 debug 签名以便个人覆盖升级。
 
 ## 数据
