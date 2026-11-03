@@ -96,7 +96,6 @@ fun DouyinVideoPlayer(
     val currentPause by rememberUpdatedState(pause)
     var wasPlayingBeforePause by remember(url) { mutableStateOf(true) }
     var wasPlayingBeforeScrub by remember(url) { mutableStateOf(true) }
-    var wasPlayingBeforeExternalPause by remember(url) { mutableStateOf(false) }
 
     val player = remember(url) {
         ExoPlayer.Builder(context).build().apply {
@@ -186,12 +185,11 @@ fun DouyinVideoPlayer(
 
     LaunchedEffect(pause, player) {
         if (pause) {
-            if (player.isPlaying) {
-                wasPlayingBeforeExternalPause = true
-                player.pause()
-            }
-        } else if (wasPlayingBeforeExternalPause) {
-            wasPlayingBeforeExternalPause = false
+            // Covers both a page that is already playing and a pre-composed neighbour
+            // that is still preparing; pause() also clears playWhenReady.
+            player.pause()
+        } else if (player.playbackState != Player.STATE_ENDED) {
+            // The active work always starts automatically, including after a swipe.
             player.play()
         }
     }

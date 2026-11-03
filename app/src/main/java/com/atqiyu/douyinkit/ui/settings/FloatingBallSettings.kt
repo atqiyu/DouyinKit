@@ -237,6 +237,17 @@ fun FloatingBallSettings() {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp),
                 )
+                FloatingSwitchRow(
+                    title = "点击浮球展开浮窗",
+                    subtitle = "关闭后点击只弹出操作按钮；解析/下载状态仍会自动显示浮窗",
+                    checked = current.floatingTapShowsPanel,
+                    onCheckedChange = { checked ->
+                        scope.launch {
+                            context.appContainer.settingsRepository
+                                .setFloatingTapShowsPanel(checked)
+                        }
+                    },
+                )
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant,
                     modifier = Modifier.padding(vertical = 8.dp),
@@ -290,7 +301,7 @@ fun FloatingBallSettings() {
                     title = "按钮整体旋转",
                     valueText = "${current.floatingActionAngleOffset}°",
                     value = current.floatingActionAngleOffset.toFloat(),
-                    valueRange = -60f..60f,
+                    valueRange = -180f..180f,
                     onValueChange = { value ->
                         scope.launch {
                             context.appContainer.settingsRepository
@@ -299,7 +310,8 @@ fun FloatingBallSettings() {
                     },
                 )
                 Text(
-                    "0° 时分析按钮在浮球正上方；距离控制按钮环与浮球之间的空隙。",
+                    "0° 时分析按钮在浮球正上方；-180° 到 180° 可整体旋转按钮环。" +
+                        "按钮较多时会自动错开角度，避免互相重叠。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 2.dp),

@@ -41,8 +41,9 @@ class BackupModelsTest {
             floatingPanelColor = FloatingPanelColor.PLUM,
             floatingPanelBlur = 8,
             floatingShowClipboard = false,
+            floatingTapShowsPanel = false,
             floatingActionDistanceDp = 14,
-            floatingActionAngleOffset = 20,
+            floatingActionAngleOffset = 170,
             floatingPanelMinWidthDp = 180,
             floatingPanelMinHeightDp = 80,
             floatingIdleTimeoutSeconds = 60,
@@ -67,6 +68,8 @@ class BackupModelsTest {
         assertEquals(FloatingMode.STANDARD, settings.floatingMode)
         assertEquals(FloatingPanelStyle.GLASS, settings.floatingPanelStyle)
         assertTrue(settings.floatingShowClipboard)
+        assertTrue(settings.floatingTapShowsPanel)
+        assertEquals(0, settings.floatingActionAngleOffset)
     }
 
     @Test

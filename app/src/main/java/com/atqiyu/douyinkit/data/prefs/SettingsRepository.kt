@@ -52,6 +52,7 @@ data class AppSettings(
     val floatingPanelColor: FloatingPanelColor = FloatingPanelColor.DARK,
     val floatingPanelBlur: Int = 18,
     val floatingShowClipboard: Boolean = true,
+    val floatingTapShowsPanel: Boolean = true,
     val floatingActionDistanceDp: Int = 8,
     val floatingActionAngleOffset: Int = 0,
     val floatingPanelMinWidthDp: Int = 160,
@@ -113,10 +114,11 @@ class SettingsRepository(private val context: Context) {
                 }.getOrDefault(FloatingPanelColor.DARK),
                 floatingPanelBlur = (prefs[KEY_FLOATING_PANEL_BLUR] ?: 18).coerceIn(0, 25),
                 floatingShowClipboard = prefs[KEY_FLOATING_SHOW_CLIPBOARD] ?: true,
+                floatingTapShowsPanel = prefs[KEY_FLOATING_TAP_PANEL] ?: true,
                 floatingActionDistanceDp = (prefs[KEY_FLOATING_ACTION_DISTANCE] ?: 8)
                     .coerceIn(0, 24),
                 floatingActionAngleOffset = (prefs[KEY_FLOATING_ACTION_ANGLE] ?: 0)
-                    .coerceIn(-60, 60),
+                    .coerceIn(-180, 180),
                 floatingPanelMinWidthDp = (prefs[KEY_FLOATING_PANEL_MIN_WIDTH] ?: 160)
                     .coerceIn(150, 260),
                 floatingPanelMinHeightDp = (prefs[KEY_FLOATING_PANEL_MIN_HEIGHT] ?: 64)
@@ -214,12 +216,16 @@ class SettingsRepository(private val context: Context) {
         dataStore.edit { it[KEY_FLOATING_SHOW_CLIPBOARD] = show }
     }
 
+    suspend fun setFloatingTapShowsPanel(show: Boolean) {
+        dataStore.edit { it[KEY_FLOATING_TAP_PANEL] = show }
+    }
+
     suspend fun setFloatingActionDistance(distanceDp: Int) {
         dataStore.edit { it[KEY_FLOATING_ACTION_DISTANCE] = distanceDp.coerceIn(0, 24) }
     }
 
     suspend fun setFloatingActionAngleOffset(degrees: Int) {
-        dataStore.edit { it[KEY_FLOATING_ACTION_ANGLE] = degrees.coerceIn(-60, 60) }
+        dataStore.edit { it[KEY_FLOATING_ACTION_ANGLE] = degrees.coerceIn(-180, 180) }
     }
 
     suspend fun setFloatingPanelMinWidth(widthDp: Int) {
@@ -258,6 +264,7 @@ class SettingsRepository(private val context: Context) {
             prefs[KEY_FLOATING_PANEL_COLOR] = settings.floatingPanelColor.name
             prefs[KEY_FLOATING_PANEL_BLUR] = settings.floatingPanelBlur
             prefs[KEY_FLOATING_SHOW_CLIPBOARD] = settings.floatingShowClipboard
+            prefs[KEY_FLOATING_TAP_PANEL] = settings.floatingTapShowsPanel
             prefs[KEY_FLOATING_ACTION_DISTANCE] = settings.floatingActionDistanceDp
             prefs[KEY_FLOATING_ACTION_ANGLE] = settings.floatingActionAngleOffset
             prefs[KEY_FLOATING_PANEL_MIN_WIDTH] = settings.floatingPanelMinWidthDp
@@ -289,6 +296,7 @@ class SettingsRepository(private val context: Context) {
         val KEY_FLOATING_PANEL_COLOR = stringPreferencesKey("floating_panel_color")
         val KEY_FLOATING_PANEL_BLUR = intPreferencesKey("floating_panel_blur")
         val KEY_FLOATING_SHOW_CLIPBOARD = booleanPreferencesKey("floating_show_clipboard")
+        val KEY_FLOATING_TAP_PANEL = booleanPreferencesKey("floating_tap_shows_panel")
         val KEY_FLOATING_ACTION_DISTANCE = intPreferencesKey("floating_action_distance")
         val KEY_FLOATING_ACTION_ANGLE = intPreferencesKey("floating_action_angle")
         val KEY_FLOATING_PANEL_MIN_WIDTH = intPreferencesKey("floating_panel_min_width")

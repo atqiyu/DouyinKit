@@ -65,6 +65,7 @@ DownloadRequest (Aweme + kind + gear + options)
 - 下载页把任务聚合为 `DownloadGroup` 后，在内存中按 DataStore 的排序模式排序；合集成员关系独立存储在 Room，筛选时按 `awemeId → collectionId` 映射过滤作品组。删除合集只清除成员关系。
 - `DownloadFeed` 在排序后按日期/首字符/大小区间/文件数区间生成分组标题，同时应用搜索（标题/作者/标签/合集/ID/BGM）和日期筛选；`LibraryFeed` 使用同样思路，最近排序优先使用最近下载时间，未下载记录回退解析时间。
 - 列表性能：历史快照和下载任务在 `Dispatchers.Default` 解码；`LazyColumn`/`LazyVerticalGrid` 使用稳定 key 与 contentType；滚动期间新出现卡片的封面延迟到停止滚动后加载；封面固定请求尺寸，视频封面优先远程、失败回退本地帧。
+- 作品预览：`WorkPreviewDialog` 使用 `VerticalPager`（`beyondViewportPageCount = 1`）按下载页当前 feed 顺序切换作品；每页独立持有选中文件、图片分页、详情面板和播放状态，非当前页视频暂停；顶部关闭/详情/分享/打开以及底部作者信息都在页内，随作品切换自动更新。当前页视频和 LivePhoto 自动开始播放，`pause` 变为 false 时强制恢复播放，避免预组合页首次打开时不播放。`detailsOpen` 时禁用纵向 pager，返回键先关闭详情。视频/直播照片/BGM 均使用单作品循环，不自动跳到下一个。
 - 滚动进度由独立的 `ScrollProgressOverlay` 读取列表状态，避免滚动帧触发整个页面重组。发布构建启用 R8 + 资源压缩，并使用与历史安装包相同的 debug 签名以便个人覆盖升级。
 
 ## 数据
@@ -78,7 +79,7 @@ Room（版本 3）：
 
 DataStore：
 - 默认清晰度（0 = 最高清晰度）、优先 H.264、LivePhoto/BGM/ZIP 默认项、剪贴板识别、下载页网格/列表、下载页排序模式、主题/动态色、历史保留天数、免责声明状态
-- 浮球：启用状态、轻享/连播模式、连播自动下载开关
+- 浮球：启用状态、轻享/连播模式、连播自动下载开关、点击浮球是否自动展开浮窗、按钮距离/角度、浮窗样式与最小尺寸、休眠时长
 
 下载请求扩展字段：
 - `imageIndexes`：非空时只下载指定的图片列表索引，用于部分图片下载；
@@ -113,7 +114,7 @@ DataStore：
 | `DownloadFileCleaner` | MediaStore/旧路径文件删除、按 URI 清理下载记录 |
 | `DownloadCleanupDialog` | 作品/文件级删除选择、全选、是否删除本地文件 |
 | `WorkPartsSheet` | 下载卡片长按后的文件选择、文件详情与分析入口 |
-| `WorkPreviewDialog` | 作品级全屏预览：抖音式视频/图集/LivePhoto/BGM、作品与文件详情面板 |
+| `WorkPreviewDialog` | 作品级全屏预览：抖音式视频/图集/LivePhoto/BGM、作品与文件详情面板；上下 `VerticalPager` 切换作品，每个作品独立顶部按钮与状态 |
 | `DouyinVideoPlayer` | 自定义交互的 Media3 播放器（单击暂停、平滑拖动进度、58dp 拖动热区、亮红发光高亮、信息隐藏） |
 | `InlineLoopingVideo` | 图片 Pager 内的 LivePhoto 循环播放（TextureView，可继续左右滑动；有 BGM 时静音且不抢音频焦点） |
 | `AutoLoopingAudio` | 图文作品预览的无界面 BGM 循环播放器，随内容切换和生命周期暂停/恢复；LivePhoto 播放期间保持 |
@@ -139,10 +140,17 @@ DataStore：
 - `FloatingAssistantService`：`specialUse` 前台服务，持有悬浮球、环绕操作窗口、独立信息浮窗、
   输入框、剪贴板监听、`FloatingParseQueue` 和常驻通知；`SYSTEM_ALERT_WINDOW` 使其能在其他应用上层显示。
   操作按钮是独立的小窗口，全部为 42dp 图标；点击浮球后从浮球弹出并跟随拖动。信息浮窗先于浮球加入
-  WindowManager，保持浮球和操作按钮在面板之上，但面板背景不再请求系统模糊。
+  WindowManager，保持浮球和操作按钮在面板之上，但面板背景不再请求系统模糊。浮窗自身不再包含“×”，
+  显示浮窗时关闭按钮作为操作环成员从浮球上方弹出。
+- `FloatingActionLayout` 负责操作环的纯几何布局：默认角度为分析 -90°、输入 180°、打开 0°、
+  停止 40°、结果 90°；出现停止时打开按钮移到 -14°、结果移到 94°，出现关闭按钮时关闭位于 -144°、
+  输入移到 162°，任意两个按钮保持至少 54° 间隔。`FloatingOverlayController` 只负责把角度加上
+  用户整体旋转（-180°–180°）并换算成窗口坐标；角度变化用 180ms `ValueAnimator` 平滑移动，
+  拖动浮球或浮球自身回移动画时位置即时跟随。
 - `FloatingOverlayController` 的窗口位移由 `ValueAnimator` 驱动：边缘点击回移 220ms、休眠移动 320ms、
   唤醒 260ms；按钮位置按浮球大小、可调距离和整体角度计算。空闲休眠由 `postDelayed` 检查，
-  不进行周期性 tick；操作环/输入框/浮窗/任务打开时取消。
+  不进行周期性 tick；操作环/输入框/浮窗/任务打开时取消。`state.tapShowsPanel` 控制点击浮球时
+  是否自动展开浮窗；关闭后只弹操作环，任务状态仍可通过 `expanded` 自动显示浮窗。
 - `FrostedPanelDrawable`：面板背景由半透明底色、内部柔光、噪点磨砂和白色边缘在自身 bounds 内绘制；
   支持毛玻璃/半透明/完全透明/纯色。不使用 `FLAG_BLUR_BEHIND`，因为部分 OEM 会把它扩展到整屏。
   面板默认 280×112dp，最小 150×64dp，最小宽高由设置控制。

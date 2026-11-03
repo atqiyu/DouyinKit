@@ -235,6 +235,13 @@ fun DownloadsScreen() {
     var renameTarget by remember { mutableStateOf<DownloadCollectionEntity?>(null) }
     var deleteTarget by remember { mutableStateOf<DownloadCollectionEntity?>(null) }
     val previewGroup = groups.firstOrNull { it.awemeId == previewAwemeId }
+    val previewGroups = remember(previewGroup, visibleGroups, groups) {
+        when {
+            previewGroup == null -> emptyList()
+            visibleGroups.any { it.awemeId == previewGroup.awemeId } -> visibleGroups
+            else -> listOf(previewGroup)
+        }
+    }
 
     val gridState = rememberLazyGridState()
     var loadImages by remember { mutableStateOf(true) }
@@ -731,9 +738,10 @@ fun DownloadsScreen() {
         )
     }
 
-    if (previewGroup != null) {
+    if (previewGroup != null && previewGroups.isNotEmpty()) {
         WorkPreviewDialog(
-            group = previewGroup,
+            groups = previewGroups,
+            initialAwemeId = previewGroup.awemeId,
             initialFileUri = previewInitialUri,
             onDismiss = {
                 previewAwemeId = null

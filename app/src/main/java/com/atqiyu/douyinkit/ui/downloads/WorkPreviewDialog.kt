@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -107,10 +108,71 @@ import java.util.Locale
 
 @Composable
 fun WorkPreviewDialog(
-    group: DownloadGroup,
+    groups: List<DownloadGroup>,
+    initialAwemeId: String,
     onDismiss: () -> Unit,
     onRemoveGroup: (DownloadGroup) -> Unit,
     initialFileUri: String? = null,
+) {
+    if (groups.isEmpty()) return
+    val initialIndex = remember(groups, initialAwemeId) {
+        groups.indexOfFirst { it.awemeId == initialAwemeId }.coerceAtLeast(0)
+    }
+    val pagerState = rememberPagerState(initialPage = initialIndex) { groups.size }
+    var detailsOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(pagerState.currentPage) {
+        detailsOpen = false
+    }
+
+    Dialog(
+        onDismissRequest = {
+            if (detailsOpen) detailsOpen = false else onDismiss()
+        },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        PreviewSystemBars()
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+        ) {
+            VerticalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = !detailsOpen,
+                beyondViewportPageCount = 1,
+                key = { index -> groups.getOrNull(index)?.awemeId ?: index },
+            ) { pageIndex ->
+                val group = groups.getOrNull(pageIndex) ?: return@VerticalPager
+                val active = pagerState.currentPage == pageIndex
+                WorkPreviewPage(
+                    group = group,
+                    active = active,
+                    initialFileUri = if (pageIndex == initialIndex) initialFileUri else null,
+                    detailsOpen = detailsOpen && active,
+                    onDetailsOpenChange = { open ->
+                        if (active) detailsOpen = open
+                    },
+                    onDismiss = onDismiss,
+                    onRemoveGroup = onRemoveGroup,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkPreviewPage(
+    group: DownloadGroup,
+    active: Boolean,
+    initialFileUri: String?,
+    detailsOpen: Boolean,
+    onDetailsOpenChange: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    onRemoveGroup: (DownloadGroup) -> Unit,
 ) {
     val context = LocalContext.current
     var selectedUri by remember(group.awemeId) {
@@ -135,20 +197,17 @@ fun WorkPreviewDialog(
     val initialImagePage = imagePages.indexOfFirst {
         it.image.file.uri.toString() == selectedUri
     }.coerceAtLeast(0)
-    val pagerState = rememberPagerState(initialPage = initialImagePage) { imagePages.size }
+    val imagePagerState = rememberPagerState(initialPage = initialImagePage) { imagePages.size }
     LaunchedEffect(selected?.kind, initialImagePage, imagePages.size) {
         if (selected?.kind == GroupMediaKind.IMAGE && imagePages.isNotEmpty()) {
-            pagerState.scrollToPage(initialImagePage.coerceIn(0, imagePages.lastIndex))
+            imagePagerState.scrollToPage(initialImagePage.coerceIn(0, imagePages.lastIndex))
         }
     }
-    val currentImagePage = imagePages.getOrNull(pagerState.currentPage)
+    val currentImagePage = imagePages.getOrNull(imagePagerState.currentPage)
     val displayItem = if (selected?.kind == GroupMediaKind.IMAGE) {
         currentImagePage?.image ?: selected
     } else {
         selected
-    }
-    var showDetails by remember(group.awemeId) {
-        mutableStateOf(group.mediaItems.isEmpty())
     }
     var audioPreview by remember { mutableStateOf<GroupMediaItem?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -171,363 +230,355 @@ fun WorkPreviewDialog(
     } else {
         null
     }
-    val imageBgmEnabled = group.aweme.kind == AwemeKind.IMAGES &&
+    val imageBgmEnabled = active &&
+        group.aweme.kind == AwemeKind.IMAGES &&
         selected?.kind == GroupMediaKind.IMAGE &&
         audioPreview == null
 
-    LaunchedEffect(pagerState.currentPage) {
+    LaunchedEffect(imagePagerState.currentPage) {
         playingLiveUri = null
     }
 
     fun select(item: GroupMediaItem) {
         selectedUri = item.file.uri.toString()
-        showDetails = false
+        onDetailsOpenChange(false)
     }
 
-    Dialog(
-        onDismissRequest = {
-            if (showDetails) showDetails = false else onDismiss()
-        },
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
     ) {
-        PreviewSystemBars()
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black),
-        ) {
-            when {
-                selected == null -> EmptyStage(group)
-                selected.isPlayableVideo -> DouyinVideoPlayer(
-                    url = selected.file.uri.toString(),
-                    modifier = Modifier.fillMaxSize(),
-                    pause = audioPreview != null,
-                )
+        when {
+            selected == null -> EmptyStage(group)
+            selected.isPlayableVideo -> DouyinVideoPlayer(
+                url = selected.file.uri.toString(),
+                modifier = Modifier.fillMaxSize(),
+                pause = audioPreview != null || !active,
+            )
 
-                selected.kind == GroupMediaKind.IMAGE && imagePages.isNotEmpty() -> {
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize(),
-                    ) { pageIndex ->
-                        val page = imagePages[pageIndex]
-                        val liveUri = page.live?.file?.uri?.toString()
-                        val livePlaying = liveUri != null && playingLiveUri == liveUri
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black)
-                                .pointerInput(pageIndex, liveUri) {
-                                    detectTapGestures {
-                                        if (liveUri != null && playingLiveUri != liveUri) {
-                                            playingLiveUri = liveUri
-                                        }
+            selected.kind == GroupMediaKind.IMAGE && imagePages.isNotEmpty() -> {
+                HorizontalPager(
+                    state = imagePagerState,
+                    modifier = Modifier.fillMaxSize(),
+                ) { pageIndex ->
+                    val page = imagePages[pageIndex]
+                    val liveUri = page.live?.file?.uri?.toString()
+                    val livePlaying = liveUri != null && playingLiveUri == liveUri
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black)
+                            .pointerInput(pageIndex, liveUri) {
+                                detectTapGestures {
+                                    if (liveUri != null && playingLiveUri != liveUri) {
+                                        playingLiveUri = liveUri
                                     }
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (livePlaying) {
-                                InlineLoopingVideo(
-                                    url = liveUri.orEmpty(),
-                                    modifier = Modifier.fillMaxSize(),
-                                    pause = audioPreview != null,
-                                    muteAudio = imageBgmUrl != null,
-                                )
-                            } else {
-                                FadeInAsyncImage(
-                                    model = page.image.file.uri,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .alpha(0.3f),
-                                    contentScale = ContentScale.Crop,
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(Color.Black.copy(alpha = 0.28f)),
-                                )
-                                FadeInAsyncImage(
-                                    model = page.image.file.uri,
-                                    contentDescription = page.image.title,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Fit,
-                                )
-                            }
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (livePlaying) {
+                            InlineLoopingVideo(
+                                url = liveUri.orEmpty(),
+                                modifier = Modifier.fillMaxSize(),
+                                pause = audioPreview != null || !active,
+                                muteAudio = imageBgmUrl != null,
+                            )
+                        } else {
+                            FadeInAsyncImage(
+                                model = page.image.file.uri,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .alpha(0.3f),
+                                contentScale = ContentScale.Crop,
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.28f)),
+                            )
+                            FadeInAsyncImage(
+                                model = page.image.file.uri,
+                                contentDescription = page.image.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit,
+                            )
                         }
                     }
                 }
-
-                selected.kind == GroupMediaKind.AUDIO -> AudioStage(
-                    group = group,
-                    item = selected,
-                    onPlay = { audioPreview = selected },
-                )
-
-                selected.kind == GroupMediaKind.ZIP -> ZipStage(item = selected)
-
-                else -> EmptyStage(group)
             }
 
+            selected.kind == GroupMediaKind.AUDIO -> AudioStage(
+                group = group,
+                item = selected,
+                onPlay = { audioPreview = selected },
+            )
+
+            selected.kind == GroupMediaKind.ZIP -> ZipStage(item = selected)
+
+            else -> EmptyStage(group)
+        }
+
+        if (active) {
             AutoLoopingAudio(
                 url = imageBgmUrl,
                 enabled = imageBgmEnabled,
             )
+        }
 
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .height(190.dp)
-                    .alpha(topContentAlpha)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = 0.82f), Color.Transparent),
-                        ),
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(190.dp)
+                .alpha(topContentAlpha)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Black.copy(alpha = 0.82f), Color.Transparent),
                     ),
-            )
+                ),
+        )
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            IconButton(
+                onClick = onDismiss,
+                enabled = infoVisible,
+                modifier = Modifier
+                    .alpha(topContentAlpha)
+                    .background(Color.Black.copy(alpha = 0.3f), CircleShape),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "关闭作品预览",
+                    tint = Color.White,
+                )
+            }
             Row(
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .weight(1f)
+                    .alpha(topContentAlpha),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                IconButton(
-                    onClick = onDismiss,
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "作品预览",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = if (group.isActive) {
+                            group.statusLine
+                        } else {
+                            "${group.fileCount} 个文件 · ${formatBytes(group.totalBytes)}"
+                        },
+                        color = Color.White.copy(alpha = 0.62f),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                HeaderAction(
+                    icon = Icons.Default.Info,
+                    label = "作品与文件详情",
                     enabled = infoVisible,
-                    modifier = Modifier
-                        .alpha(topContentAlpha)
-                        .background(Color.Black.copy(alpha = 0.3f), CircleShape),
+                    onClick = { onDetailsOpenChange(true) },
+                )
+                HeaderAction(
+                    icon = Icons.Default.Share,
+                    label = "分享当前文件",
+                    enabled = infoVisible && displayItem != null,
+                    onClick = { displayItem?.let { shareSavedFile(context, it.file) } },
+                )
+                HeaderAction(
+                    icon = Icons.AutoMirrored.Filled.OpenInNew,
+                    label = "打开当前文件",
+                    enabled = infoVisible && displayItem != null,
+                    onClick = { displayItem?.let { openSavedFile(context, it.file) } },
+                )
+            }
+            Box(modifier = Modifier.alpha(toggleAlpha)) {
+                HeaderAction(
+                    icon = if (infoVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    label = if (infoVisible) "隐藏作品信息" else "显示作品信息",
+                    onClick = { infoVisible = !infoVisible },
+                )
+            }
+        }
+
+        val currentLive = if (selected?.kind == GroupMediaKind.IMAGE) {
+            currentImagePage?.live
+        } else {
+            null
+        }
+        AnimatedVisibility(
+            visible = infoVisible &&
+                currentLive != null &&
+                playingLiveUri != currentLive.file.uri.toString(),
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(150)),
+        ) {
+            Surface(
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(top = 98.dp),
+                color = Color.Black.copy(alpha = 0.42f),
+                shape = CircleShape,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "关闭作品预览",
+                        imageVector = Icons.Default.PlayCircle,
+                        contentDescription = null,
                         tint = Color.White,
+                        modifier = Modifier.size(14.dp),
                     )
-                }
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .alpha(topContentAlpha),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "作品预览",
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = if (group.isActive) {
-                                group.statusLine
-                            } else {
-                                "${group.fileCount} 个文件 · ${formatBytes(group.totalBytes)}"
-                            },
-                            color = Color.White.copy(alpha = 0.62f),
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    HeaderAction(
-                        icon = Icons.Default.Info,
-                        label = "作品与文件详情",
-                        enabled = infoVisible,
-                        onClick = { showDetails = true },
-                    )
-                    HeaderAction(
-                        icon = Icons.Default.Share,
-                        label = "分享当前文件",
-                        enabled = infoVisible && displayItem != null,
-                        onClick = { displayItem?.let { shareSavedFile(context, it.file) } },
-                    )
-                    HeaderAction(
-                        icon = Icons.AutoMirrored.Filled.OpenInNew,
-                        label = "打开当前文件",
-                        enabled = infoVisible && displayItem != null,
-                        onClick = { displayItem?.let { openSavedFile(context, it.file) } },
-                    )
-                }
-                Box(modifier = Modifier.alpha(toggleAlpha)) {
-                    HeaderAction(
-                        icon = if (infoVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                        label = if (infoVisible) "隐藏作品信息" else "显示作品信息",
-                        onClick = { infoVisible = !infoVisible },
-                    )
-                }
-            }
-
-            val currentLive = if (selected?.kind == GroupMediaKind.IMAGE) {
-                currentImagePage?.live
-            } else {
-                null
-            }
-            AnimatedVisibility(
-                visible = infoVisible &&
-                    currentLive != null &&
-                    playingLiveUri != currentLive.file.uri.toString(),
-                modifier = Modifier.align(Alignment.TopCenter),
-                enter = fadeIn(tween(200)),
-                exit = fadeOut(tween(150)),
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .statusBarsPadding()
-                        .padding(top = 98.dp),
-                    color = Color.Black.copy(alpha = 0.42f),
-                    shape = CircleShape,
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayCircle,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Text(
-                            text = "点击播放动图",
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                }
-            }
-
-            AnimatedVisibility(
-                visible = infoVisible &&
-                    selected?.kind == GroupMediaKind.IMAGE &&
-                    imagePages.size > 1,
-                modifier = Modifier.align(Alignment.TopCenter),
-                enter = fadeIn(tween(200)),
-                exit = fadeOut(tween(150)),
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .statusBarsPadding()
-                        .padding(top = 62.dp),
-                    color = Color.Black.copy(alpha = 0.36f),
-                    shape = CircleShape,
-                ) {
                     Text(
-                        text = "${pagerState.currentPage + 1} / ${imagePages.size}",
+                        text = "点击播放动图",
                         color = Color.White,
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
                     )
                 }
             }
+        }
 
-            AnimatedVisibility(
-                visible = infoVisible,
+        AnimatedVisibility(
+            visible = infoVisible &&
+                selected?.kind == GroupMediaKind.IMAGE &&
+                imagePages.size > 1,
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(150)),
+        ) {
+            Surface(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth(),
-                enter = fadeIn(tween(220)) + slideInVertically(tween(240)) { it / 14 },
-                exit = fadeOut(tween(160)) + slideOutVertically(tween(180)) { it / 18 },
+                    .statusBarsPadding()
+                    .padding(top = 62.dp),
+                color = Color.Black.copy(alpha = 0.36f),
+                shape = CircleShape,
             ) {
-                Box(
+                Text(
+                    text = "${imagePagerState.currentPage + 1} / ${imagePages.size}",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = infoVisible,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            enter = fadeIn(tween(220)) + slideInVertically(tween(240)) { it / 14 },
+            exit = fadeOut(tween(160)) + slideOutVertically(tween(180)) { it / 18 },
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)),
+                        ),
+                    )
+                    .padding(top = 56.dp),
+            ) {
+                WorkOverlayInfo(
+                    group = group,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)),
-                            ),
-                        )
-                        .padding(top = 56.dp),
-                ) {
-                    WorkOverlayInfo(
-                        group = group,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(
-                                start = 16.dp,
-                                end = 16.dp,
-                                bottom = if (selected?.isPlayableVideo == true) 36.dp else 18.dp,
-                            ),
-                    )
-                }
-            }
-
-            AnimatedVisibility(
-                visible = showDetails,
-                modifier = Modifier.fillMaxSize(),
-                enter = fadeIn(tween(140)),
-                exit = fadeOut(tween(100)),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .clickable { showDetails = false },
-                )
-            }
-
-            AnimatedVisibility(
-                visible = showDetails,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.82f),
-                enter = slideInVertically(tween(240)) { it } + fadeIn(tween(160)),
-                exit = slideOutVertically(tween(180)) { it } + fadeOut(tween(100)),
-            ) {
-                DetailsSheet(
-                    group = group,
-                    selected = displayItem,
-                    onClose = { showDetails = false },
-                    onSelect = { select(it) },
-                    onPreviewAudio = { audioPreview = it },
-                    onRemove = { confirmRemove = true },
-                )
-            }
-
-            if (confirmRemove) {
-                AlertDialog(
-                    onDismissRequest = { confirmRemove = false },
-                    title = { Text("移除这个作品的记录") },
-                    text = {
-                        Text("只移除本机的下载记录，不会删除已经保存到相册的文件。")
-                    },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                confirmRemove = false
-                                onRemoveGroup(group)
-                            },
-                        ) {
-                            Text("移除")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { confirmRemove = false }) {
-                            Text("取消")
-                        }
-                    },
+                        .navigationBarsPadding()
+                        .padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            bottom = if (selected?.isPlayableVideo == true) 36.dp else 18.dp,
+                        ),
                 )
             }
         }
 
-        audioPreview?.let { item ->
-            AudioPreviewDialog(
-                title = item.title,
-                uri = item.file.uri.toString(),
-                onDismiss = { audioPreview = null },
+        AnimatedVisibility(
+            visible = detailsOpen,
+            modifier = Modifier.fillMaxSize(),
+            enter = fadeIn(tween(140)),
+            exit = fadeOut(tween(100)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .clickable { onDetailsOpenChange(false) },
             )
         }
+
+        AnimatedVisibility(
+            visible = detailsOpen,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .fillMaxHeight(0.82f),
+            enter = slideInVertically(tween(240)) { it } + fadeIn(tween(160)),
+            exit = slideOutVertically(tween(180)) { it } + fadeOut(tween(100)),
+        ) {
+            DetailsSheet(
+                group = group,
+                selected = displayItem,
+                onClose = { onDetailsOpenChange(false) },
+                onSelect = { select(it) },
+                onPreviewAudio = { audioPreview = it },
+                onRemove = { confirmRemove = true },
+            )
+        }
+
+        if (confirmRemove) {
+            AlertDialog(
+                onDismissRequest = { confirmRemove = false },
+                title = { Text("移除这个作品的记录") },
+                text = {
+                    Text("只移除本机的下载记录，不会删除已经保存到相册的文件。")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            confirmRemove = false
+                            onRemoveGroup(group)
+                        },
+                    ) {
+                        Text("移除")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmRemove = false }) {
+                        Text("取消")
+                    }
+                },
+            )
+        }
+    }
+
+    audioPreview?.let { item ->
+        AudioPreviewDialog(
+            title = item.title,
+            uri = item.file.uri.toString(),
+            onDismiss = { audioPreview = null },
+        )
     }
 }
 

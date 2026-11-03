@@ -117,6 +117,7 @@ class FloatingAssistantService : Service() {
                         panelColorArgb = settings.floatingPanelColor.argb,
                         panelBlur = settings.floatingPanelBlur,
                         showClipboard = settings.floatingShowClipboard,
+                        tapShowsPanel = settings.floatingTapShowsPanel,
                         actionDistanceDp = settings.floatingActionDistanceDp,
                         actionAngleOffset = settings.floatingActionAngleOffset,
                         panelMinWidthDp = settings.floatingPanelMinWidthDp,

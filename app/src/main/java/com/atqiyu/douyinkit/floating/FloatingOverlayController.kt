@@ -109,7 +109,6 @@ class FloatingOverlayController(
     )
     private val panelQueue = TextView(context)
     private val panelLink = TextView(context)
-    private val panelClose = TextView(context)
     private val panelDragArea = FrameLayout(context)
     private val panelDragHandle = View(context)
     private val panelResizeHandle = TextView(context)
@@ -136,8 +135,9 @@ class FloatingOverlayController(
     private var panelWidthPx = dp(280)
     private var panelHeightPx = dp(112)
 
-    private val actionWindows = mutableMapOf<ActionKind, ActionWindow>()
+    private val actionWindows = mutableMapOf<FloatingActionKind, ActionWindow>()
     private var actionsVisible = false
+    private var currentActionAngles: Map<FloatingActionKind, Double> = emptyMap()
     private var inputWindow: View? = null
     private var inputAttached = false
 
@@ -260,6 +260,7 @@ class FloatingOverlayController(
             .setDuration(190L)
             .setInterpolator(DecelerateInterpolator())
             .start()
+        if (actionsVisible) renderActions()
         if (notify) onExpandedChanged(true)
     }
 
@@ -269,6 +270,7 @@ class FloatingOverlayController(
             return
         }
         panelVisible = false
+        if (actionsVisible) renderActions()
         if (notify) onExpandedChanged(false)
         if (!panelAttached) return
         panelRoot.animate().cancel()
@@ -532,21 +534,10 @@ class FloatingOverlayController(
         header.addView(
             panelDragArea,
             FrameLayout.LayoutParams(
-                dp(64),
+                FrameLayout.LayoutParams.MATCH_PARENT,
                 dp(26),
                 Gravity.CENTER_HORIZONTAL or Gravity.TOP,
             ),
-        )
-        panelClose.text = "×"
-        panelClose.setTextColor(0xFFD6DCE5.toInt())
-        panelClose.textSize = 16f
-        panelClose.gravity = Gravity.CENTER
-        panelClose.contentDescription = "关闭浮窗"
-        panelClose.setShadowLayer(3f, 0f, 1f, Color.argb(180, 0, 0, 0))
-        panelClose.setOnClickListener { hidePanel(notify = true) }
-        header.addView(
-            panelClose,
-            FrameLayout.LayoutParams(dp(32), dp(26), Gravity.END or Gravity.TOP),
         )
         panelCard.addView(
             header,
@@ -774,7 +765,7 @@ class FloatingOverlayController(
             }
             .start()
         renderActions()
-        if (actionsVisible && !panelVisible && hasPanelInfo(state)) {
+        if (actionsVisible && state.tapShowsPanel && !panelVisible && hasPanelInfo(state)) {
             showPanel(notify = true)
         }
         updateSleepTimer()
@@ -785,16 +776,16 @@ class FloatingOverlayController(
             hideActions()
             return
         }
-        val specs = linkedMapOf<ActionKind, ActionSpec>()
+        val specs = linkedMapOf<FloatingActionKind, ActionSpec>()
         when {
-            state.needsVerification -> specs[ActionKind.PRIMARY] = ActionSpec(
+            state.needsVerification -> specs[FloatingActionKind.PRIMARY] = ActionSpec(
                 description = "完成验证",
                 icon = R.drawable.ic_float_analyze,
                 accent = true,
                 onClick = onPrimaryAction,
             )
 
-            state.needsLogin -> specs[ActionKind.PRIMARY] = ActionSpec(
+            state.needsLogin -> specs[FloatingActionKind.PRIMARY] = ActionSpec(
                 description = "打开登录",
                 icon = R.drawable.ic_float_open,
                 accent = true,
@@ -802,7 +793,7 @@ class FloatingOverlayController(
             )
 
             state.promptVisible && !state.clipboardLink.isNullOrBlank() ->
-                specs[ActionKind.PRIMARY] = ActionSpec(
+                specs[FloatingActionKind.PRIMARY] = ActionSpec(
                     description = "解析剪贴板",
                     icon = R.drawable.ic_float_analyze,
                     accent = true,
@@ -811,7 +802,7 @@ class FloatingOverlayController(
 
             state.mode == FloatingMode.AUTO &&
                 !state.appForeground &&
-                state.foreground.isDouyin -> specs[ActionKind.PRIMARY] = ActionSpec(
+                state.foreground.isDouyin -> specs[FloatingActionKind.PRIMARY] = ActionSpec(
                 description = "分析当前视频",
                 icon = R.drawable.ic_float_analyze,
                 accent = true,
@@ -819,20 +810,28 @@ class FloatingOverlayController(
                 onClick = onAutoAction,
             )
         }
-        specs[ActionKind.INPUT] = ActionSpec(
+        if (panelVisible) {
+            specs[FloatingActionKind.CLOSE_PANEL] = ActionSpec(
+                description = "关闭浮窗",
+                icon = R.drawable.ic_float_close,
+                accent = false,
+                onClick = { hidePanel(notify = true) },
+            )
+        }
+        specs[FloatingActionKind.INPUT] = ActionSpec(
             description = "输入链接",
             icon = R.drawable.ic_float_input,
             accent = false,
             onClick = { onOpenInput(state.clipboardLink) },
         )
-        specs[ActionKind.OPEN_APP] = ActionSpec(
+        specs[FloatingActionKind.OPEN_APP] = ActionSpec(
             description = "打开 DouyinKit",
             icon = R.drawable.ic_float_open,
             accent = false,
             onClick = onOpenApp,
         )
         if (isBusy()) {
-            specs[ActionKind.STOP] = ActionSpec(
+            specs[FloatingActionKind.STOP] = ActionSpec(
                 description = "停止",
                 icon = R.drawable.ic_float_stop,
                 accent = false,
@@ -841,13 +840,18 @@ class FloatingOverlayController(
             )
         }
         if (state.resultReady) {
-            specs[ActionKind.RESULT] = ActionSpec(
+            specs[FloatingActionKind.RESULT] = ActionSpec(
                 description = "结果",
                 icon = R.drawable.ic_float_result,
                 accent = false,
                 onClick = onOpenApp,
             )
         }
+        val angles = FloatingActionLayout.rotated(
+            FloatingActionLayout.angles(specs.keys),
+            state.actionAngleOffset.coerceIn(-180, 180),
+        )
+        currentActionAngles = angles
         actionWindows.keys.filter { it !in specs }.forEach { kind ->
             actionWindows[kind]?.hide()
         }
@@ -855,14 +859,20 @@ class FloatingOverlayController(
             val window = actionWindows.getOrPut(kind) { ActionWindow(kind) }
             window.configure(spec)
             if (!window.isShown) window.show(index * 35L)
-            window.moveTo(positionFor(kind, window.widthPx, window.heightPx))
+            window.moveTo(
+                positionFor(kind, window.widthPx, window.heightPx, angles),
+                animate = true,
+            )
         }
-        updateActionPositions()
     }
 
     private fun updateActionPositions() {
+        val angles = currentActionAngles
         actionWindows.forEach { (kind, window) ->
-            window.moveTo(positionFor(kind, window.widthPx, window.heightPx))
+            window.moveTo(
+                positionFor(kind, window.widthPx, window.heightPx, angles),
+                animate = false,
+            )
         }
     }
 
@@ -870,19 +880,16 @@ class FloatingOverlayController(
         actionWindows.values.forEach { it.hide() }
     }
 
-    private fun positionFor(kind: ActionKind, width: Int, height: Int): Pair<Int, Int> {
+    private fun positionFor(
+        kind: FloatingActionKind,
+        width: Int,
+        height: Int,
+        angles: Map<FloatingActionKind, Double>,
+    ): Pair<Int, Int> {
         val centerX = orbParams.x + orbParams.width / 2
         val centerY = orbParams.y + orbParams.height / 2
-        val angle = when (kind) {
-            ActionKind.PRIMARY -> -90.0
-            ActionKind.INPUT -> 180.0
-            ActionKind.OPEN_APP -> 0.0
-            ActionKind.STOP -> 35.0
-            ActionKind.RESULT -> 90.0
-        } + state.actionAngleOffset.coerceIn(-60, 60)
-        val radius = orbParams.width / 2f +
-            dp(state.actionDistanceDp.coerceIn(0, 24)) +
-            kotlin.math.max(width, height) / 2f
+        val angle = angles[kind] ?: 0.0
+        val radius = actionRingRadius(angles, width, height)
         val rad = Math.toRadians(angle)
         val x = (centerX + kotlin.math.cos(rad) * radius - width / 2).toInt()
         val y = (centerY + kotlin.math.sin(rad) * radius - height / 2).toInt()
@@ -891,6 +898,22 @@ class FloatingOverlayController(
                 statusBar + dp(4),
                 (screenHeight - navBar - height - dp(4)).coerceAtLeast(statusBar + dp(4)),
             )
+    }
+
+    private fun actionRingRadius(
+        angles: Map<FloatingActionKind, Double>,
+        width: Int,
+        height: Int,
+    ): Float {
+        val configured = orbParams.width / 2f +
+            dp(state.actionDistanceDp.coerceIn(0, 24)) +
+            kotlin.math.max(width, height) / 2f
+        if (angles.size < 2) return configured
+        val minGap = FloatingActionLayout.minGapDegrees(angles.values)
+        if (minGap <= 0.0) return configured
+        val required = (dp(42) + dp(1)) /
+            (2f * kotlin.math.sin(Math.toRadians(minGap / 2.0))).toFloat()
+        return kotlin.math.max(configured, required)
     }
 
     private fun renderPanel() {
@@ -1261,9 +1284,7 @@ class FloatingOverlayController(
         val onClick: () -> Unit,
     )
 
-    private enum class ActionKind { PRIMARY, INPUT, OPEN_APP, STOP, RESULT }
-
-    private inner class ActionWindow(private val kind: ActionKind) {
+    private inner class ActionWindow(private val kind: FloatingActionKind) {
         val root = FrameLayout(context)
         private val content = LinearLayout(context)
         private val icon = ImageView(context)
@@ -1275,6 +1296,7 @@ class FloatingOverlayController(
             private set
         var heightPx = dp(42)
             private set
+        private var moveAnimator: ValueAnimator? = null
         private var params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -1325,11 +1347,12 @@ class FloatingOverlayController(
             content.isEnabled = newSpec.enabled
             content.alpha = if (newSpec.enabled) 1f else 0.5f
             content.contentDescription = newSpec.description ?: when (kind) {
-                ActionKind.INPUT -> "输入链接"
-                ActionKind.OPEN_APP -> "打开 DouyinKit"
-                ActionKind.STOP -> "停止"
-                ActionKind.RESULT -> "结果"
-                ActionKind.PRIMARY -> "浮球操作"
+                FloatingActionKind.INPUT -> "输入链接"
+                FloatingActionKind.OPEN_APP -> "打开 DouyinKit"
+                FloatingActionKind.STOP -> "停止"
+                FloatingActionKind.RESULT -> "结果"
+                FloatingActionKind.CLOSE_PANEL -> "关闭浮窗"
+                FloatingActionKind.PRIMARY -> "浮球操作"
             }
             (icon.parent as? android.view.ViewGroup)?.removeView(icon)
             content.removeAllViews()
@@ -1351,10 +1374,14 @@ class FloatingOverlayController(
 
         fun show(startDelay: Long) {
             if (isShown) return
+            moveAnimator?.cancel()
+            moveAnimator = null
             if (attached) {
                 isShown = true
                 root.animate().cancel()
                 content.animate().cancel()
+                val pos = positionFor(kind, widthPx, heightPx, currentActionAngles)
+                applyPosition(pos.first, pos.second)
                 root.alpha = 1f
                 content.scaleX = 1f
                 content.scaleY = 1f
@@ -1372,7 +1399,7 @@ class FloatingOverlayController(
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT,
             ).apply { gravity = Gravity.TOP or Gravity.START }
-            val pos = positionFor(kind, widthPx, heightPx)
+            val pos = positionFor(kind, widthPx, heightPx, currentActionAngles)
             params.x = pos.first
             params.y = pos.second
             runCatching { windowManager.addView(root, params) }
@@ -1408,6 +1435,8 @@ class FloatingOverlayController(
         fun hide() {
             if (!isShown) return
             isShown = false
+            moveAnimator?.cancel()
+            moveAnimator = null
             root.animate().alpha(0f).setDuration(120L).start()
             content.animate()
                 .scaleX(0.6f)
@@ -1422,11 +1451,43 @@ class FloatingOverlayController(
                 .start()
         }
 
-        fun moveTo(position: Pair<Int, Int>) {
+        fun moveTo(position: Pair<Int, Int>, animate: Boolean = false) {
             if (!isShown) return
-            if (params.x == position.first && params.y == position.second) return
-            params.x = position.first
-            params.y = position.second
+            val targetX = position.first
+            val targetY = position.second
+            if (moveAnimator == null && params.x == targetX && params.y == targetY) return
+            moveAnimator?.cancel()
+            moveAnimator = null
+            if (!animate) {
+                applyPosition(targetX, targetY)
+                return
+            }
+            val startX = params.x
+            val startY = params.y
+            val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 180L
+                interpolator = DecelerateInterpolator()
+                addUpdateListener { valueAnimator ->
+                    val fraction = valueAnimator.animatedFraction
+                    applyPosition(
+                        (startX + (targetX - startX) * fraction).toInt(),
+                        (startY + (targetY - startY) * fraction).toInt(),
+                    )
+                }
+            }
+            moveAnimator = animator
+            animator.addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (moveAnimator === animation) moveAnimator = null
+                }
+            })
+            animator.start()
+        }
+
+        private fun applyPosition(x: Int, y: Int) {
+            if (params.x == x && params.y == y) return
+            params.x = x
+            params.y = y
             runCatching { windowManager.updateViewLayout(root, params) }
         }
     }
