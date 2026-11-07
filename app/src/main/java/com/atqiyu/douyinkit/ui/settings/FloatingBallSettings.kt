@@ -519,6 +519,29 @@ fun FloatingBallSettings() {
                     },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                FloatingSliderRow(
+                    title = "解析队列间隔",
+                    valueText = if (current.floatingQueueIntervalSeconds == 0) {
+                        "不等待"
+                    } else {
+                        "${current.floatingQueueIntervalSeconds} 秒"
+                    },
+                    value = current.floatingQueueIntervalSeconds.toFloat(),
+                    valueRange = 0f..60f,
+                    enabled = settings?.floatingMode == FloatingMode.AUTO,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository
+                                .setFloatingQueueInterval(value.toInt())
+                        }
+                    },
+                )
+                Text(
+                    "每条解析/自动下载完成后等待一段时间再处理下一条，降低连续请求触发风控和内存峰值的概率。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
                 PermissionRow(
                     title = "悬浮窗权限",
                     granted = permissions.overlay,

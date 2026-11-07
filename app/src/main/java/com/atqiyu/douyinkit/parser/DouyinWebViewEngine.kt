@@ -35,6 +35,7 @@ import com.atqiyu.douyinkit.core.util.LinkExtractor
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -262,14 +263,16 @@ class DouyinWebViewEngine(private val context: Context) {
         return true
     }
 
-    suspend fun readPageState(): PageState = suspendCancellableCoroutine { cont ->
-        mainHandler.post {
-            val script = "(function(){try{return (window.__DK_getState ? window.__DK_getState() : '{}');}catch(e){return '{}';}})()"
-            webView.evaluateJavascript(script) { raw ->
-                val decoded = decodeJsString(raw)
-                val state = parsePageState(decoded)
-                lastPageState = state
-                if (cont.isActive) cont.resume(state)
+    suspend fun readPageState(): PageState? = withTimeoutOrNull(READ_STATE_TIMEOUT_MS) {
+        suspendCancellableCoroutine { cont ->
+            mainHandler.post {
+                val script = "(function(){try{return (window.__DK_getState ? window.__DK_getState() : '{}');}catch(e){return '{}';}})()"
+                webView.evaluateJavascript(script) { raw ->
+                    val decoded = decodeJsString(raw)
+                    val state = parsePageState(decoded)
+                    lastPageState = state
+                    if (cont.isActive) cont.resume(state)
+                }
             }
         }
     }
@@ -669,6 +672,7 @@ class DouyinWebViewEngine(private val context: Context) {
         const val BRIDGE_JS_NAME = "DouyinKitBridge"
         const val BRIDGE_ANDROID_NAME = "DouyinKitAndroid"
         const val MAX_BRIDGE_CHARS = 500_000
+        const val READ_STATE_TIMEOUT_MS = 3_000L
         val AWE_ID_REGEX = Regex("""^\d{8,25}$""")
         val ALLOWED_ORIGINS = setOf(
             "https://douyin.com",

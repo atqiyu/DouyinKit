@@ -3,6 +3,7 @@ package com.atqiyu.douyinkit.floating
 import android.content.Context
 import android.util.Log
 import com.atqiyu.douyinkit.core.model.Aweme
+import com.atqiyu.douyinkit.core.model.ErrorCode
 import com.atqiyu.douyinkit.core.util.LinkExtractor
 import com.atqiyu.douyinkit.data.prefs.AppSettings
 import com.atqiyu.douyinkit.di.appContainer
@@ -25,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -55,6 +57,7 @@ class FloatingParseQueue(
     private var engine: DouyinWebViewEngine? = null
     private var controller: ParseController? = null
     private var host: FloatingWebViewHost? = null
+    private var consecutiveFailures = 0
 
     fun enqueue(raw: String): Boolean {
         val link = LinkExtractor.extract(raw).firstOrNull()?.url ?: return false
@@ -131,8 +134,30 @@ class FloatingParseQueue(
 
     fun destroy() {
         stopAll()
+        resetController()
+        consecutiveFailures = 0
+    }
+
+    private fun noteParseFailure() {
+        consecutiveFailures += 1
+        if (consecutiveFailures < WATCHDOG_FAILURE_LIMIT) return
+        Log.w(TAG, "recreating hidden WebView after $consecutiveFailures consecutive timeouts")
+        resetController()
+        consecutiveFailures = 0
+        FloatingAssistantBus.update {
+            it.copy(
+                expanded = true,
+                message = "解析环境无响应，已自动重建，正在继续队列…",
+                progress = null,
+            )
+        }
+    }
+
+    private fun resetController() {
+        verificationDismissed = false
         host?.destroy()
         controller?.destroy()
+        engine?.destroy()
         host = null
         controller = null
         engine = null
@@ -151,6 +176,15 @@ class FloatingParseQueue(
                     process(next)
                     activeLink = null
                     updateQueueSize()
+                    val hasPending = synchronized(lock) { pending.isNotEmpty() }
+                    if (hasPending) {
+                        val seconds = runCatching {
+                            settingsRepository.settings.first().floatingQueueIntervalSeconds
+                        }.getOrDefault(5).coerceIn(0, 60)
+                        if (seconds > 0) {
+                            delay(seconds * 1_000L)
+                        }
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -214,6 +248,7 @@ class FloatingParseQueue(
         val monitor = scope.launch {
             parser.state.collect { state -> renderParseState(state) }
         }
+        var watchdogFailure = false
         try {
             parser.start(listOf(link))
             val finalState = withTimeoutOrNull(PARSE_TIMEOUT_MS) {
@@ -222,6 +257,7 @@ class FloatingParseQueue(
                 }
             }
             if (finalState == null) {
+                watchdogFailure = true
                 parser.cancel()
                 FloatingAssistantBus.update {
                     it.copy(
@@ -239,7 +275,10 @@ class FloatingParseQueue(
             val aweme = finalState.results.lastOrNull()
             Log.d(TAG, "parse finished: stage=${finalState.stage} results=${finalState.results.size}")
             if (aweme == null) {
-                val message = finalState.failures.lastOrNull()?.message ?: "没有解析到作品"
+                val failure = finalState.failures.lastOrNull()
+                watchdogFailure = failure?.code == ErrorCode.DETAIL_TIMEOUT ||
+                    failure?.code == ErrorCode.WEBVIEW_UNAVAILABLE
+                val message = failure?.message ?: "没有解析到作品"
                 FloatingAssistantBus.update {
                     it.copy(
                         phase = FloatingPhase.ERROR,
@@ -284,6 +323,7 @@ class FloatingParseQueue(
             }
         } finally {
             monitor.cancelAndJoin()
+            if (watchdogFailure) noteParseFailure() else consecutiveFailures = 0
             if (parser.state.value.let { !it.running && it.stage in FINAL_STAGES }) {
                 // keep the last result visible
             }
@@ -362,8 +402,10 @@ class FloatingParseQueue(
         }
         val finalRequest = withContext(Dispatchers.IO) {
             val existingTasks = runCatching {
-                (DownloadRegistry.tasks.value + downloadHistoryRepository.allTasks())
-                    .distinctBy { it.id }
+                (
+                    DownloadRegistry.tasks.value +
+                        downloadHistoryRepository.tasksForAweme(aweme.awemeId)
+                    ).distinctBy { it.id }
             }.getOrElse { DownloadRegistry.tasks.value }
             val existing = collectExistingDownloadContent(aweme.awemeId, existingTasks)
             val check = findDuplicateDownloads(listOf(request), existing)
@@ -535,6 +577,7 @@ class FloatingParseQueue(
     companion object {
         private const val TAG = "FloatingParseQueue"
         private const val PARSE_TIMEOUT_MS = 180_000L
+        private const val WATCHDOG_FAILURE_LIMIT = 2
         private const val DOWNLOAD_TIMEOUT_MS = 30L * 60L * 1_000L
         private val FINAL_STAGES = setOf(
             ParseStage.DONE,

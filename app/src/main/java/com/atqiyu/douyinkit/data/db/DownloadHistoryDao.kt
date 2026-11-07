@@ -24,6 +24,9 @@ interface DownloadHistoryDao {
     @Query("SELECT * FROM download_history ORDER BY createdAt DESC")
     suspend fun getAll(): List<DownloadHistoryEntity>
 
+    @Query("SELECT * FROM download_history WHERE awemeId = :awemeId ORDER BY createdAt DESC")
+    suspend fun getForAweme(awemeId: String): List<DownloadHistoryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: DownloadHistoryEntity)
 

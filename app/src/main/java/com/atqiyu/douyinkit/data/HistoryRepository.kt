@@ -3,6 +3,7 @@ package com.atqiyu.douyinkit.data
 import com.atqiyu.douyinkit.core.model.Aweme
 import com.atqiyu.douyinkit.data.db.AwemeDao
 import com.atqiyu.douyinkit.data.db.AwemeEntity
+import com.atqiyu.douyinkit.data.db.AwemeMeta
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
 
@@ -14,6 +15,11 @@ class HistoryRepository(
     },
 ) {
     fun observeAll(): Flow<List<AwemeEntity>> = dao.observeAll()
+
+    fun observeRecent(limit: Int): Flow<List<AwemeEntity>> =
+        dao.observeRecent(limit.coerceIn(1, 50))
+
+    fun observeMeta(): Flow<List<AwemeMeta>> = dao.observeMeta()
 
     fun observeFavorites(): Flow<List<AwemeEntity>> = dao.observeFavorites()
 
@@ -93,8 +99,12 @@ class HistoryRepository(
         return aweme
     }
 
-    fun tagsOf(entity: AwemeEntity): List<String> {
-        return entity.tags.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+    fun tagsOf(entity: AwemeEntity): List<String> = tagsOf(entity.tags)
+
+    fun tagsOf(meta: AwemeMeta): List<String> = tagsOf(meta.tags)
+
+    fun tagsOf(tags: String): List<String> {
+        return tags.split(',').map { it.trim() }.filter { it.isNotEmpty() }
     }
 
     fun normalizeTags(tags: List<String>): String {

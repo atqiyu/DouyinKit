@@ -63,6 +63,7 @@ DownloadRequest (Aweme + kind + gear + options)
 - 下载管理支持按作品/文件级删除。删除本地文件使用 MediaStore（旧系统回退到文件路径 + MediaScanner），只有文件删除成功才移除对应记录；也可只删记录保留文件。
 - `DownloadProgressTracker` 用 `baseBytes`（已完成项）+ `currentBytes`（当前项）聚合成单调递增的总字节数；`maxBytes` 保证不会因多次回调重复累计，`total` 至少等于已下载字节，避免 UI 出现“已下载大于总量”。UI 还通过 `DownloadProgress.displayBytes` 做最终上限保护。
 - 下载页把任务聚合为 `DownloadGroup` 后，在内存中按 DataStore 的排序模式排序；合集成员关系独立存储在 Room，筛选时按 `awemeId → collectionId` 映射过滤作品组。删除合集只清除成员关系。
+- 历史数据量较大时，列表查询避免读取完整快照：`HomeScreen` 只查询最近 6 条；`DownloadsScreen` 的标签/收藏使用 `AwemeMeta` 投影（`awemeId/tags/isFavorite/...`，不含 `snapshotJson`）；`LibraryScreen` 列表也只加载元数据，打开作品时才按 `awemeId` 解码完整快照。浮球重复检查同样只查询当前作品的下载记录。
 - `DownloadFeed` 在排序后按日期/首字符/大小区间/文件数区间生成分组标题，同时应用搜索（标题/作者/标签/合集/ID/BGM）和日期筛选；`LibraryFeed` 使用同样思路，最近排序优先使用最近下载时间，未下载记录回退解析时间。
 - 列表性能：历史快照和下载任务在 `Dispatchers.Default` 解码；`LazyColumn`/`LazyVerticalGrid` 使用稳定 key 与 contentType；滚动期间新出现卡片的封面延迟到停止滚动后加载；封面固定请求尺寸，视频封面优先远程、失败回退本地帧。
 - 作品预览：`WorkPreviewDialog` 使用 `VerticalPager`（`beyondViewportPageCount = 1`）按下载页当前 feed 顺序切换作品；每页独立持有选中文件、图片分页、详情面板和播放状态。预组合播放器创建时 `playWhenReady = false`，非当前页保持暂停且不请求音频焦点；当前页在 `pause = false` 时主动 `play()`，因此首次打开和切换作品后都会自动播放，图文 BGM 也会自动循环。顶部关闭/详情/分享/打开以及底部作者信息都在页内，随作品切换自动更新。`detailsOpen` 时禁用纵向 pager，返回键先关闭详情。视频/直播照片/BGM 均使用单作品循环，不自动跳到下一个。
@@ -80,7 +81,7 @@ Room（版本 3）：
 
 DataStore：
 - 默认清晰度（0 = 最高清晰度）、优先 H.264、LivePhoto/BGM/ZIP 默认项、剪贴板识别、下载页网格/列表、下载页排序模式、主题/动态色、历史保留天数、免责声明状态
-- 浮球：启用状态、轻享/连播模式、连播自动下载开关、点击浮球是否自动展开浮窗、按钮距离/角度、浮窗样式与最小尺寸、休眠时长
+- 浮球：启用状态、轻享/连播模式、连播自动下载开关、解析队列间隔（0–60 秒，默认 5 秒）、点击浮球是否自动展开浮窗、按钮距离/角度、浮窗样式与最小尺寸、休眠时长
 
 下载请求扩展字段：
 - `imageIndexes`：非空时只下载指定的图片列表索引，用于部分图片下载；
@@ -164,7 +165,9 @@ DataStore：
   模式用图标底部“轻/连”徽标表示；浮球外圈 `OrbProgressRing` 显示解析扫描或下载进度。
   连播队列繁忙时仍保留“分析当前视频”，不再显示“下一个”；点击会继续自动分享并 enqueue。
 - `FloatingParseQueue`：复用 `DouyinWebViewEngine` + `ParseController`，WebView 挂在 1×1 隐藏窗口；
-  一次只解析一个作品，解析后按默认值自动下载并等待 `DownloadRegistry` 终止，再处理队列下一项。
+  一次只解析一个作品，解析后按默认值自动下载并等待 `DownloadRegistry` 终止，再按设置的队列间隔等待后
+  处理下一项。`ParseController.readPageState` 有 3 秒超时；连续 2 次超时/页面无响应时，队列会销毁并
+  重建隐藏 WebView，避免复用已卡死的解析环境。重复下载检查只查询当前 `awemeId` 的下载记录。
 - 安全验证/登录：验证状态把同一个 WebView 扩展为全屏页面；登录只提示手动打开。
 - `FloatingAssistantJobService` + `FloatingAssistantScheduler`：15 分钟 persisted JobScheduler 看护；
   `BootCompletedReceiver` 在开机/更新后重新注册；OEM 可能仍阻止后台启动，设置提供电池优化入口。

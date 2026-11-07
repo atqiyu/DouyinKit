@@ -47,6 +47,7 @@ class BackupModelsTest {
             floatingPanelMinWidthDp = 180,
             floatingPanelMinHeightDp = 80,
             floatingIdleTimeoutSeconds = 60,
+            floatingQueueIntervalSeconds = 23,
         )
         val encoded = json.encodeToString(
             ConfigFile.serializer(),
@@ -70,6 +71,22 @@ class BackupModelsTest {
         assertTrue(settings.floatingShowClipboard)
         assertTrue(settings.floatingTapShowsPanel)
         assertEquals(0, settings.floatingActionAngleOffset)
+        assertEquals(5, settings.floatingQueueIntervalSeconds)
+    }
+
+    @Test
+    fun queueIntervalIsClamped() {
+        val high = json.decodeFromString(
+            ConfigFile.serializer(),
+            """{"schemaVersion":1,"settings":{"floatingQueueIntervalSeconds":120}}""",
+        )
+        assertEquals(60, high.settings.toSettings().floatingQueueIntervalSeconds)
+
+        val low = json.decodeFromString(
+            ConfigFile.serializer(),
+            """{"schemaVersion":1,"settings":{"floatingQueueIntervalSeconds":-3}}""",
+        )
+        assertEquals(0, low.settings.toSettings().floatingQueueIntervalSeconds)
     }
 
     @Test

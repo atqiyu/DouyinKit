@@ -30,6 +30,9 @@ class DownloadHistoryRepository(
 
     suspend fun allTasks(): List<DownloadTask> = dao.getAll().mapNotNull { toTask(it) }
 
+    suspend fun tasksForAweme(awemeId: String): List<DownloadTask> =
+        dao.getForAweme(awemeId).mapNotNull { toTask(it) }
+
     suspend fun allEntities(): List<DownloadHistoryEntity> = dao.getAll()
 
     suspend fun importEntities(entities: List<DownloadHistoryEntity>) {

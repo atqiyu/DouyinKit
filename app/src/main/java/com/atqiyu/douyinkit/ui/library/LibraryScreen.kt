@@ -53,7 +53,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -73,7 +72,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.request.ImageRequest
 import com.atqiyu.douyinkit.core.model.Aweme
 import com.atqiyu.douyinkit.core.model.AwemeKind
+import com.atqiyu.douyinkit.core.model.Author
 import com.atqiyu.douyinkit.data.db.AwemeEntity
+import com.atqiyu.douyinkit.data.db.AwemeMeta
 import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.ui.components.FadeInAsyncImage
 import com.atqiyu.douyinkit.ui.components.FeedSectionHeader
@@ -98,7 +99,9 @@ fun LibraryScreen(
     val repository = context.appContainer.historyRepository
     val downloadHistoryRepository = context.appContainer.downloadHistoryRepository
     val scope = rememberCoroutineScope()
-    val entities by repository.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    // List rows only need display metadata. Full snapshots are decoded when a work is opened,
+    // so 800+ records no longer inflate the heap while the queue is saving new works.
+    val metas by repository.observeMeta().collectAsStateWithLifecycle(initialValue = null)
     val downloadTimes by downloadHistoryRepository.observeLatestDownloadTimes()
         .collectAsStateWithLifecycle(initialValue = emptyMap())
 
@@ -115,29 +118,20 @@ fun LibraryScreen(
     val filter = LibraryFilter.entries[filterIndex]
     val sortMode = LibrarySortMode.entries[sortIndex]
 
-    val decodedState by produceState<List<Pair<AwemeEntity, Aweme>>?>(
-        initialValue = null,
-        entities,
-    ) {
-        value = withContext(Dispatchers.Default) {
-            entities.mapNotNull { entity ->
-                repository.decode(entity)?.let { aweme -> entity to aweme }
-            }
-        }
-    }
-    val entries = remember(decodedState, downloadTimes) {
-        decodedState.orEmpty().map { (entity, aweme) ->
-            val downloadedAt = downloadTimes[entity.awemeId]
+    val metaList = metas.orEmpty()
+    val entries = remember(metas, downloadTimes) {
+        metaList.map { meta ->
+            val downloadedAt = downloadTimes[meta.awemeId]
             LibraryEntry(
-                entity = entity,
-                aweme = aweme,
-                tags = repository.tagsOf(entity),
-                sortMillis = downloadedAt ?: entity.parsedAt,
+                entity = meta.toStubEntity(),
+                aweme = meta.toStubAweme(),
+                tags = repository.tagsOf(meta),
+                sortMillis = downloadedAt ?: meta.parsedAt,
                 downloadedAt = downloadedAt,
             )
         }
     }
-    val loading = decodedState == null && entities.isNotEmpty()
+    val loading = metas == null
     val allTags = remember(entries) {
         entries.flatMap { it.tags }.distinct().take(24)
     }
@@ -252,8 +246,8 @@ fun LibraryScreen(
                                             selectedTag != null ->
                                             "找到 ${filtered.size} 条记录"
 
-                                        else -> "${entities.size} 条解析记录 · " +
-                                            "收藏 ${entities.count { it.isFavorite }}"
+                                        else -> "${metaList.size} 条解析记录 · " +
+                                            "收藏 ${metaList.count { it.isFavorite }}"
                                     },
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -303,7 +297,7 @@ fun LibraryScreen(
                                         selectionMode = true
                                         searchOpen = false
                                     },
-                                    enabled = entities.isNotEmpty(),
+                                    enabled = metaList.isNotEmpty(),
                                 ) {
                                     Text("选择")
                                 }
@@ -427,7 +421,7 @@ fun LibraryScreen(
 
                 feed.isEmpty() -> {
                     item(key = "library_empty") {
-                        EmptyLibrary(hasHistory = entities.isNotEmpty())
+                        EmptyLibrary(hasHistory = metaList.isNotEmpty())
                     }
                 }
 
@@ -477,7 +471,13 @@ fun LibraryScreen(
                                                 selectedIds + entry.entity.awemeId
                                             }
                                         } else {
-                                            onOpen(entry.aweme)
+                                            scope.launch {
+                                                val full = withContext(Dispatchers.IO) {
+                                                    repository.get(entry.entity.awemeId)
+                                                        ?.let { repository.decode(it) }
+                                                }
+                                                if (full != null) onOpen(full)
+                                            }
                                         }
                                     },
                                     onToggleSelected = {
@@ -807,6 +807,32 @@ private fun EmptyLibrary(hasHistory: Boolean) {
         }
     }
 }
+
+private fun AwemeMeta.toStubEntity(): AwemeEntity = AwemeEntity(
+    awemeId = awemeId,
+    title = title,
+    authorName = authorName,
+    desc = desc,
+    kind = kind,
+    coverUrl = coverUrl,
+    sourceUrl = sourceUrl,
+    snapshotJson = "",
+    isFavorite = isFavorite,
+    tags = tags,
+    parsedAt = parsedAt,
+    createTimeSeconds = createTimeSeconds,
+)
+
+private fun AwemeMeta.toStubAweme(): Aweme = Aweme(
+    awemeId = awemeId,
+    kind = runCatching { AwemeKind.valueOf(kind) }.getOrDefault(AwemeKind.VIDEO),
+    desc = desc,
+    createTimeSeconds = createTimeSeconds,
+    author = Author(nickname = authorName),
+    sourceUrl = sourceUrl,
+    canonicalUrl = sourceUrl.orEmpty(),
+    parsedAtMillis = parsedAt,
+)
 
 private fun formatParsedAt(timestamp: Long): String {
     return runCatching {

@@ -58,6 +58,7 @@ data class AppSettings(
     val floatingPanelMinWidthDp: Int = 160,
     val floatingPanelMinHeightDp: Int = 64,
     val floatingIdleTimeoutSeconds: Int = 45,
+    val floatingQueueIntervalSeconds: Int = 5,
 )
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -125,6 +126,8 @@ class SettingsRepository(private val context: Context) {
                     .coerceIn(64, 160),
                 floatingIdleTimeoutSeconds = (prefs[KEY_FLOATING_IDLE_TIMEOUT] ?: 45)
                     .coerceIn(0, 180),
+                floatingQueueIntervalSeconds = (prefs[KEY_FLOATING_QUEUE_INTERVAL] ?: 5)
+                    .coerceIn(0, 60),
             )
         }
 
@@ -240,6 +243,10 @@ class SettingsRepository(private val context: Context) {
         dataStore.edit { it[KEY_FLOATING_IDLE_TIMEOUT] = seconds.coerceIn(0, 180) }
     }
 
+    suspend fun setFloatingQueueInterval(seconds: Int) {
+        dataStore.edit { it[KEY_FLOATING_QUEUE_INTERVAL] = seconds.coerceIn(0, 60) }
+    }
+
     suspend fun replaceAll(settings: AppSettings) {
         dataStore.edit { prefs ->
             prefs[KEY_DEFAULT_QUALITY] = settings.defaultQualityHeight
@@ -270,6 +277,7 @@ class SettingsRepository(private val context: Context) {
             prefs[KEY_FLOATING_PANEL_MIN_WIDTH] = settings.floatingPanelMinWidthDp
             prefs[KEY_FLOATING_PANEL_MIN_HEIGHT] = settings.floatingPanelMinHeightDp
             prefs[KEY_FLOATING_IDLE_TIMEOUT] = settings.floatingIdleTimeoutSeconds
+            prefs[KEY_FLOATING_QUEUE_INTERVAL] = settings.floatingQueueIntervalSeconds
         }
     }
 
@@ -302,5 +310,6 @@ class SettingsRepository(private val context: Context) {
         val KEY_FLOATING_PANEL_MIN_WIDTH = intPreferencesKey("floating_panel_min_width")
         val KEY_FLOATING_PANEL_MIN_HEIGHT = intPreferencesKey("floating_panel_min_height")
         val KEY_FLOATING_IDLE_TIMEOUT = intPreferencesKey("floating_idle_timeout")
+        val KEY_FLOATING_QUEUE_INTERVAL = intPreferencesKey("floating_queue_interval")
     }
 }

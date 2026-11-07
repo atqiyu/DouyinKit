@@ -161,13 +161,15 @@ fun DownloadsScreen() {
         counts
     }
     val historyRepository = context.appContainer.historyRepository
-    val historyEntities by historyRepository.observeAll()
+    // Only metadata is needed for tags/favorites. Reading every snapshotJson here made each
+    // queue save reload ~800 full works and could exhaust the heap while downloads were active.
+    val historyMetas by historyRepository.observeMeta()
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val tagsByAweme = remember(historyEntities) {
-        historyEntities.associate { it.awemeId to historyRepository.tagsOf(it) }
+    val tagsByAweme = remember(historyMetas) {
+        historyMetas.associate { it.awemeId to historyRepository.tagsOf(it) }
     }
-    val favoriteIds = remember(historyEntities) {
-        historyEntities.asSequence()
+    val favoriteIds = remember(historyMetas) {
+        historyMetas.asSequence()
             .filter { it.isFavorite }
             .map { it.awemeId }
             .toSet()

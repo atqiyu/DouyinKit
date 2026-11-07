@@ -109,10 +109,10 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val historyRepository = context.applicationContext.appContainer.historyRepository
-    val recentEntities by historyRepository.observeAll()
+    val recentEntities by historyRepository.observeRecent(6)
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val recentAwemes = remember(recentEntities) {
-        recentEntities.take(6).mapNotNull { historyRepository.decode(it) }
+        recentEntities.mapNotNull { historyRepository.decode(it) }
     }
     var lastShownClipboardLink by remember { mutableStateOf<String?>(null) }
     val bannerLink = clipboardLink ?: lastShownClipboardLink

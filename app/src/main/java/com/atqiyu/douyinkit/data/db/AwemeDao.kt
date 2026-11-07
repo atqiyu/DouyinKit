@@ -6,10 +6,35 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
+/** Lightweight row used by list screens that do not need the full snapshot JSON. */
+data class AwemeMeta(
+    val awemeId: String,
+    val title: String,
+    val authorName: String,
+    val desc: String,
+    val kind: String,
+    val coverUrl: String?,
+    val sourceUrl: String?,
+    val createTimeSeconds: Long?,
+    val isFavorite: Boolean,
+    val tags: String,
+    val parsedAt: Long,
+)
+
 @Dao
 interface AwemeDao {
     @Query("SELECT * FROM awemes ORDER BY parsedAt DESC")
     fun observeAll(): Flow<List<AwemeEntity>>
+
+    @Query("SELECT * FROM awemes ORDER BY parsedAt DESC LIMIT :limit")
+    fun observeRecent(limit: Int): Flow<List<AwemeEntity>>
+
+    @Query(
+        "SELECT awemeId, title, authorName, desc, kind, coverUrl, sourceUrl, " +
+            "createTimeSeconds, isFavorite, tags, parsedAt " +
+            "FROM awemes ORDER BY parsedAt DESC",
+    )
+    fun observeMeta(): Flow<List<AwemeMeta>>
 
     @Query("SELECT * FROM awemes WHERE isFavorite = 1 ORDER BY parsedAt DESC")
     fun observeFavorites(): Flow<List<AwemeEntity>>

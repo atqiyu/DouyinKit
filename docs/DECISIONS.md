@@ -363,3 +363,29 @@ Android 10+ 限制后台剪贴板读取，Android 12+ 限制后台启动前台�
   上下切换约 21/25/40ms，legacy 8.42%（含视频首帧准备）。
 - 预组合页仍会创建最多 3 个 ExoPlayer 并占用解码器，但都处于暂停；低端设备首次切换未缓存视频仍可能短暂缓冲。
 - 预览打开状态由 `PreviewOverlay` 管理；关闭后底层下载页保持原有滚动位置和筛选状态。
+
+## ADR-023：大数据量下的轻量查询与隐藏 WebView 看门狗
+
+**状态**：已采纳（2026-11-07）
+
+**背景**：浮球队列连续解析 45 条后，隐藏 WebView 从某一刻开始所有页面都超时，直到应用进程被系统杀掉并重启
+才恢复。现场排查发现：历史记录达到 800+ 条时，首页和下载页仍通过 `SELECT * FROM awemes` 读取全部完整
+`snapshotJson`；队列每保存一条作品都会触发 Room 失效重查。真机上复现了 Java 堆 OOM（`CursorWindow.getString`，
+384MB 上限），同时 WebView 渲染进程没有崩溃、一直存活到应用被系统杀掉，说明它是被内存/资源压力拖死而不是崩溃。
+另外，`readPageState` 没有超时，渲染进程无响应时会一直挂起；队列也没有重建 WebView 的逻辑。
+
+**决策**：
+- `HomeScreen` 改为 `observeRecent(6)`，SQL 使用 `LIMIT 6`，只读取首页真正需要的记录。
+- `DownloadsScreen` 的标签/收藏改用 `AwemeMeta` 投影，不读取 `snapshotJson`。
+- `LibraryScreen` 列表只加载 `AwemeMeta`；点击作品时再按 `awemeId` 读取并解码完整快照。
+- `FloatingParseQueue` 的重复下载检查改为 `tasksForAweme(awemeId)`，不再 `allTasks()` 加载全部下载历史。
+- `DouyinWebViewEngine.readPageState()` 增加 3 秒超时；`ParseController` 连续 2 次读取不到页面状态即抛出
+  `WEBVIEW_UNAVAILABLE`。`FloatingParseQueue` 连续 2 次超时/无响应后销毁并重建隐藏 WebView。
+- 新增“解析队列间隔”设置（0–60 秒，默认 5 秒），每条完成后再等待指定时间处理下一条。
+
+**后果**：
+- 840 条解析记录下，首页 PSS 约 89MB、资料库约 119MB，不再出现全量快照加载导致的 OOM；下载页仍需解码
+  下载任务本身，PSS 约 287MB，但不再读取全部作品快照。
+- 单条作品打开时会多一次 Room 查询/解码，换来列表内存显著下降。
+- 队列遇到卡死的 WebView 会先快速失败（约 3–6 秒）并自动重建，不再让后续作品逐个等到 45/180 秒超时。
+- 默认 5 秒间隔会拉长大队列的总体耗时；用户可在设置中调到 0 秒恢复原来的连续处理速度。

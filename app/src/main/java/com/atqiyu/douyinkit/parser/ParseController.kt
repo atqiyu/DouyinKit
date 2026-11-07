@@ -44,6 +44,7 @@ class ParseController(
     private var tickerJob: Job? = null
     private var startedAtMillis: Long = 0L
     private var currentItemStartedAt: Long = 0L
+    private var unresponsiveProbes = 0
 
     fun start(inputs: List<String>, forceRefresh: Boolean = false) {
         parseJob?.cancel()
@@ -67,6 +68,7 @@ class ParseController(
         }
 
         startedAtMillis = System.currentTimeMillis()
+        unresponsiveProbes = 0
         _state.value = ParseUiState(
             running = true,
             stage = ParseStage.RESOLVING,
@@ -275,6 +277,28 @@ class ParseController(
         throw detailError ?: DouyinKitException(ErrorCode.DETAIL_TIMEOUT, "没有拿到作品数据")
     }
 
+    private suspend fun probePageState(): PageState? {
+        val state = try {
+            engine.readPageState()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        if (state == null) {
+            unresponsiveProbes++
+            if (unresponsiveProbes >= MAX_UNRESPONSIVE_PROBES) {
+                throw DouyinKitException(
+                    ErrorCode.WEBVIEW_UNAVAILABLE,
+                    "网页无响应，请重试",
+                )
+            }
+        } else {
+            unresponsiveProbes = 0
+        }
+        return state
+    }
+
     private suspend fun awaitCapture(awemeId: String): CaptureBundle {
         var detail = engine.cachedDetail(awemeId)
         var page = engine.cachedPageModel(awemeId)
@@ -334,7 +358,7 @@ class ParseController(
             if (now >= nextProbe) {
                 nextProbe = now + PROBE_INTERVAL_MS
                 engine.requestPageModel(awemeId)
-                val state = runCatching { engine.readPageState() }.getOrNull()
+                val state = probePageState()
                 if (state != null) {
                     pageState = state
                     _state.update { it.copy(pageState = state) }
@@ -421,7 +445,7 @@ class ParseController(
 
             if (System.currentTimeMillis() >= nextProbe) {
                 nextProbe = System.currentTimeMillis() + 1_000
-                val state = runCatching { engine.readPageState() }.getOrNull()
+                val state = probePageState()
                 if (state != null) {
                     handleState(state)
                     if (state.href.contains("/note/") &&
@@ -548,5 +572,6 @@ class ParseController(
         private const val FIRST_PROBE_MS = 7_000L
         private const val PROBE_INTERVAL_MS = 6_000L
         private const val PAGE_ONLY_FALLBACK_MS = 22_000L
+        private const val MAX_UNRESPONSIVE_PROBES = 2
     }
 }

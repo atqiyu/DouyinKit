@@ -70,6 +70,7 @@ data class ConfigSettings(
     val floatingPanelMinWidthDp: Int = 160,
     val floatingPanelMinHeightDp: Int = 64,
     val floatingIdleTimeoutSeconds: Int = 45,
+    val floatingQueueIntervalSeconds: Int = 5,
 ) {
     fun toSettings(): AppSettings = AppSettings(
         defaultQualityHeight = defaultQualityHeight.coerceIn(0, 2160),
@@ -104,6 +105,7 @@ data class ConfigSettings(
         floatingPanelMinWidthDp = floatingPanelMinWidthDp.coerceIn(150, 260),
         floatingPanelMinHeightDp = floatingPanelMinHeightDp.coerceIn(64, 160),
         floatingIdleTimeoutSeconds = floatingIdleTimeoutSeconds.coerceIn(0, 180),
+        floatingQueueIntervalSeconds = floatingQueueIntervalSeconds.coerceIn(0, 60),
     )
 
     companion object {
@@ -136,6 +138,7 @@ data class ConfigSettings(
             floatingPanelMinWidthDp = settings.floatingPanelMinWidthDp,
             floatingPanelMinHeightDp = settings.floatingPanelMinHeightDp,
             floatingIdleTimeoutSeconds = settings.floatingIdleTimeoutSeconds,
+            floatingQueueIntervalSeconds = settings.floatingQueueIntervalSeconds,
         )
     }
 }
