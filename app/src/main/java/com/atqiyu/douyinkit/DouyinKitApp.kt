@@ -22,6 +22,7 @@ class DouyinKitApp : Application() {
         container = AppContainer(this)
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching { container.downloadHistoryRepository.markInterrupted() }
+            runCatching { container.shareLinkRepository.markInterrupted() }
         }
 
         val imageClient = OkHttpClient.Builder()

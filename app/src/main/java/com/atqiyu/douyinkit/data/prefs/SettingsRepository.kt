@@ -21,6 +21,13 @@ enum class FloatingMode { STANDARD, AUTO }
 
 enum class FloatingPanelStyle { GLASS, CLEAR, TRANSPARENT, SOLID }
 
+/** How the 连播 queue treats a link that the floating assistant captured. */
+enum class FloatingQueueMode {
+    PARSE_AND_DOWNLOAD,
+    PARSE_ONLY,
+    RECORD_ONLY,
+}
+
 enum class FloatingPanelColor(val argb: Long) {
     DARK(0xFF10141C),
     BLACK(0xFF000000),
@@ -44,7 +51,8 @@ data class AppSettings(
     val onboardingAccepted: Boolean = false,
     val floatingBallEnabled: Boolean = false,
     val floatingMode: FloatingMode = FloatingMode.STANDARD,
-    val floatingAutoDownload: Boolean = true,
+    val floatingQueueMode: FloatingQueueMode = FloatingQueueMode.PARSE_AND_DOWNLOAD,
+    val floatingHidePanel: Boolean = false,
     val floatingOrbSizeDp: Int = 48,
     val floatingOrbAlpha: Float = 0.88f,
     val floatingPanelOpacity: Float = 0.72f,
@@ -59,6 +67,18 @@ data class AppSettings(
     val floatingPanelMinHeightDp: Int = 64,
     val floatingIdleTimeoutSeconds: Int = 45,
     val floatingQueueIntervalSeconds: Int = 5,
+    val floatingPanelPaddingLeftDp: Int = 8,
+    val floatingPanelPaddingTopDp: Int = 4,
+    val floatingPanelPaddingRightDp: Int = 8,
+    val floatingPanelPaddingBottomDp: Int = 6,
+    val floatingPanelDragHandleTopDp: Int = 2,
+    val floatingOrbXFraction: Float = -1f,
+    val floatingOrbYFraction: Float = -1f,
+    val floatingPanelXFraction: Float = -1f,
+    val floatingPanelYFraction: Float = -1f,
+    val floatingPanelWidthDp: Int = 0,
+    val floatingPanelHeightDp: Int = 0,
+    val previewOverlayOpacity: Float = 0.86f,
 )
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -98,7 +118,16 @@ class SettingsRepository(private val context: Context) {
                         prefs[KEY_FLOATING_MODE] ?: FloatingMode.STANDARD.name,
                     )
                 }.getOrDefault(FloatingMode.STANDARD),
-                floatingAutoDownload = prefs[KEY_FLOATING_AUTO_DOWNLOAD] ?: true,
+                floatingQueueMode = runCatching {
+                    FloatingQueueMode.valueOf(
+                        prefs[KEY_FLOATING_QUEUE_MODE] ?: "",
+                    )
+                }.getOrNull() ?: if (prefs[KEY_FLOATING_AUTO_DOWNLOAD] == false) {
+                    FloatingQueueMode.PARSE_ONLY
+                } else {
+                    FloatingQueueMode.PARSE_AND_DOWNLOAD
+                },
+                floatingHidePanel = prefs[KEY_FLOATING_HIDE_PANEL] ?: false,
                 floatingOrbSizeDp = (prefs[KEY_FLOATING_ORB_SIZE] ?: 48).coerceIn(38, 72),
                 floatingOrbAlpha = (prefs[KEY_FLOATING_ORB_ALPHA] ?: 0.88f).coerceIn(0.35f, 1f),
                 floatingPanelOpacity = (prefs[KEY_FLOATING_PANEL_OPACITY] ?: 0.72f)
@@ -128,6 +157,28 @@ class SettingsRepository(private val context: Context) {
                     .coerceIn(0, 180),
                 floatingQueueIntervalSeconds = (prefs[KEY_FLOATING_QUEUE_INTERVAL] ?: 5)
                     .coerceIn(0, 60),
+                floatingPanelPaddingLeftDp = (prefs[KEY_FLOATING_PANEL_PADDING_LEFT] ?: 8)
+                    .coerceIn(0, 24),
+                floatingPanelPaddingTopDp = (prefs[KEY_FLOATING_PANEL_PADDING_TOP] ?: 4)
+                    .coerceIn(0, 24),
+                floatingPanelPaddingRightDp = (prefs[KEY_FLOATING_PANEL_PADDING_RIGHT] ?: 8)
+                    .coerceIn(0, 24),
+                floatingPanelPaddingBottomDp = (prefs[KEY_FLOATING_PANEL_PADDING_BOTTOM] ?: 6)
+                    .coerceIn(0, 24),
+                floatingPanelDragHandleTopDp = (prefs[KEY_FLOATING_PANEL_DRAG_TOP] ?: 2)
+                    .coerceIn(0, 20),
+                floatingOrbXFraction = (prefs[KEY_FLOATING_ORB_X] ?: -1f).coerceIn(-1f, 1f),
+                floatingOrbYFraction = (prefs[KEY_FLOATING_ORB_Y] ?: -1f).coerceIn(-1f, 1f),
+                floatingPanelXFraction = (prefs[KEY_FLOATING_PANEL_X] ?: -1f)
+                    .coerceIn(-1f, 1f),
+                floatingPanelYFraction = (prefs[KEY_FLOATING_PANEL_Y] ?: -1f)
+                    .coerceIn(-1f, 1f),
+                floatingPanelWidthDp = (prefs[KEY_FLOATING_PANEL_WIDTH] ?: 0)
+                    .coerceIn(0, 1000),
+                floatingPanelHeightDp = (prefs[KEY_FLOATING_PANEL_HEIGHT] ?: 0)
+                    .coerceIn(0, 1000),
+                previewOverlayOpacity = (prefs[KEY_PREVIEW_OVERLAY_OPACITY] ?: 0.86f)
+                    .coerceIn(0.5f, 1f),
             )
         }
 
@@ -187,8 +238,23 @@ class SettingsRepository(private val context: Context) {
         dataStore.edit { it[KEY_FLOATING_MODE] = mode.name }
     }
 
+    suspend fun setFloatingQueueMode(mode: FloatingQueueMode) {
+        dataStore.edit {
+            it[KEY_FLOATING_QUEUE_MODE] = mode.name
+            // Keep the legacy boolean in sync so older config files and backups remain
+            // meaningful when opened by a previous version.
+            it[KEY_FLOATING_AUTO_DOWNLOAD] = mode == FloatingQueueMode.PARSE_AND_DOWNLOAD
+        }
+    }
+
     suspend fun setFloatingAutoDownload(enabled: Boolean) {
-        dataStore.edit { it[KEY_FLOATING_AUTO_DOWNLOAD] = enabled }
+        setFloatingQueueMode(
+            if (enabled) FloatingQueueMode.PARSE_AND_DOWNLOAD else FloatingQueueMode.PARSE_ONLY,
+        )
+    }
+
+    suspend fun setFloatingHidePanel(hide: Boolean) {
+        dataStore.edit { it[KEY_FLOATING_HIDE_PANEL] = hide }
     }
 
     suspend fun setFloatingOrbSize(sizeDp: Int) {
@@ -247,6 +313,55 @@ class SettingsRepository(private val context: Context) {
         dataStore.edit { it[KEY_FLOATING_QUEUE_INTERVAL] = seconds.coerceIn(0, 60) }
     }
 
+    suspend fun setFloatingPanelPadding(left: Int, top: Int, right: Int, bottom: Int) {
+        dataStore.edit {
+            it[KEY_FLOATING_PANEL_PADDING_LEFT] = left.coerceIn(0, 24)
+            it[KEY_FLOATING_PANEL_PADDING_TOP] = top.coerceIn(0, 24)
+            it[KEY_FLOATING_PANEL_PADDING_RIGHT] = right.coerceIn(0, 24)
+            it[KEY_FLOATING_PANEL_PADDING_BOTTOM] = bottom.coerceIn(0, 24)
+        }
+    }
+
+    suspend fun setFloatingPanelDragHandleTop(topDp: Int) {
+        dataStore.edit { it[KEY_FLOATING_PANEL_DRAG_TOP] = topDp.coerceIn(0, 20) }
+    }
+
+    suspend fun setFloatingOrbPosition(xFraction: Float, yFraction: Float) {
+        dataStore.edit {
+            it[KEY_FLOATING_ORB_X] = xFraction.coerceIn(0f, 1f)
+            it[KEY_FLOATING_ORB_Y] = yFraction.coerceIn(0f, 1f)
+        }
+    }
+
+    suspend fun setFloatingPanelGeometry(
+        xFraction: Float,
+        yFraction: Float,
+        widthDp: Int,
+        heightDp: Int,
+    ) {
+        dataStore.edit {
+            it[KEY_FLOATING_PANEL_X] = xFraction.coerceIn(0f, 1f)
+            it[KEY_FLOATING_PANEL_Y] = yFraction.coerceIn(0f, 1f)
+            it[KEY_FLOATING_PANEL_WIDTH] = widthDp.coerceIn(0, 1000)
+            it[KEY_FLOATING_PANEL_HEIGHT] = heightDp.coerceIn(0, 1000)
+        }
+    }
+
+    suspend fun resetFloatingGeometry() {
+        dataStore.edit {
+            it[KEY_FLOATING_ORB_X] = -1f
+            it[KEY_FLOATING_ORB_Y] = -1f
+            it[KEY_FLOATING_PANEL_X] = -1f
+            it[KEY_FLOATING_PANEL_Y] = -1f
+            it[KEY_FLOATING_PANEL_WIDTH] = 0
+            it[KEY_FLOATING_PANEL_HEIGHT] = 0
+        }
+    }
+
+    suspend fun setPreviewOverlayOpacity(opacity: Float) {
+        dataStore.edit { it[KEY_PREVIEW_OVERLAY_OPACITY] = opacity.coerceIn(0.5f, 1f) }
+    }
+
     suspend fun replaceAll(settings: AppSettings) {
         dataStore.edit { prefs ->
             prefs[KEY_DEFAULT_QUALITY] = settings.defaultQualityHeight
@@ -263,7 +378,10 @@ class SettingsRepository(private val context: Context) {
             prefs[KEY_ONBOARDING] = settings.onboardingAccepted
             prefs[KEY_FLOATING_ENABLED] = settings.floatingBallEnabled
             prefs[KEY_FLOATING_MODE] = settings.floatingMode.name
-            prefs[KEY_FLOATING_AUTO_DOWNLOAD] = settings.floatingAutoDownload
+            prefs[KEY_FLOATING_QUEUE_MODE] = settings.floatingQueueMode.name
+            prefs[KEY_FLOATING_AUTO_DOWNLOAD] =
+                settings.floatingQueueMode == FloatingQueueMode.PARSE_AND_DOWNLOAD
+            prefs[KEY_FLOATING_HIDE_PANEL] = settings.floatingHidePanel
             prefs[KEY_FLOATING_ORB_SIZE] = settings.floatingOrbSizeDp
             prefs[KEY_FLOATING_ORB_ALPHA] = settings.floatingOrbAlpha
             prefs[KEY_FLOATING_PANEL_OPACITY] = settings.floatingPanelOpacity
@@ -278,6 +396,18 @@ class SettingsRepository(private val context: Context) {
             prefs[KEY_FLOATING_PANEL_MIN_HEIGHT] = settings.floatingPanelMinHeightDp
             prefs[KEY_FLOATING_IDLE_TIMEOUT] = settings.floatingIdleTimeoutSeconds
             prefs[KEY_FLOATING_QUEUE_INTERVAL] = settings.floatingQueueIntervalSeconds
+            prefs[KEY_FLOATING_PANEL_PADDING_LEFT] = settings.floatingPanelPaddingLeftDp
+            prefs[KEY_FLOATING_PANEL_PADDING_TOP] = settings.floatingPanelPaddingTopDp
+            prefs[KEY_FLOATING_PANEL_PADDING_RIGHT] = settings.floatingPanelPaddingRightDp
+            prefs[KEY_FLOATING_PANEL_PADDING_BOTTOM] = settings.floatingPanelPaddingBottomDp
+            prefs[KEY_FLOATING_PANEL_DRAG_TOP] = settings.floatingPanelDragHandleTopDp
+            prefs[KEY_FLOATING_ORB_X] = settings.floatingOrbXFraction
+            prefs[KEY_FLOATING_ORB_Y] = settings.floatingOrbYFraction
+            prefs[KEY_FLOATING_PANEL_X] = settings.floatingPanelXFraction
+            prefs[KEY_FLOATING_PANEL_Y] = settings.floatingPanelYFraction
+            prefs[KEY_FLOATING_PANEL_WIDTH] = settings.floatingPanelWidthDp
+            prefs[KEY_FLOATING_PANEL_HEIGHT] = settings.floatingPanelHeightDp
+            prefs[KEY_PREVIEW_OVERLAY_OPACITY] = settings.previewOverlayOpacity
         }
     }
 
@@ -311,5 +441,19 @@ class SettingsRepository(private val context: Context) {
         val KEY_FLOATING_PANEL_MIN_HEIGHT = intPreferencesKey("floating_panel_min_height")
         val KEY_FLOATING_IDLE_TIMEOUT = intPreferencesKey("floating_idle_timeout")
         val KEY_FLOATING_QUEUE_INTERVAL = intPreferencesKey("floating_queue_interval")
+        val KEY_FLOATING_QUEUE_MODE = stringPreferencesKey("floating_queue_mode")
+        val KEY_FLOATING_HIDE_PANEL = booleanPreferencesKey("floating_hide_panel")
+        val KEY_FLOATING_PANEL_PADDING_LEFT = intPreferencesKey("floating_panel_padding_left")
+        val KEY_FLOATING_PANEL_PADDING_TOP = intPreferencesKey("floating_panel_padding_top")
+        val KEY_FLOATING_PANEL_PADDING_RIGHT = intPreferencesKey("floating_panel_padding_right")
+        val KEY_FLOATING_PANEL_PADDING_BOTTOM = intPreferencesKey("floating_panel_padding_bottom")
+        val KEY_FLOATING_PANEL_DRAG_TOP = intPreferencesKey("floating_panel_drag_top")
+        val KEY_FLOATING_ORB_X = floatPreferencesKey("floating_orb_x_fraction")
+        val KEY_FLOATING_ORB_Y = floatPreferencesKey("floating_orb_y_fraction")
+        val KEY_FLOATING_PANEL_X = floatPreferencesKey("floating_panel_x_fraction")
+        val KEY_FLOATING_PANEL_Y = floatPreferencesKey("floating_panel_y_fraction")
+        val KEY_FLOATING_PANEL_WIDTH = intPreferencesKey("floating_panel_width_dp")
+        val KEY_FLOATING_PANEL_HEIGHT = intPreferencesKey("floating_panel_height_dp")
+        val KEY_PREVIEW_OVERLAY_OPACITY = floatPreferencesKey("preview_overlay_opacity")
     }
 }

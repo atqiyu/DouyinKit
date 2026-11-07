@@ -6,6 +6,7 @@ import com.atqiyu.douyinkit.core.model.Aweme
 import com.atqiyu.douyinkit.core.model.ErrorCode
 import com.atqiyu.douyinkit.core.util.LinkExtractor
 import com.atqiyu.douyinkit.data.prefs.AppSettings
+import com.atqiyu.douyinkit.data.prefs.FloatingQueueMode
 import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.download.DownloadKind
 import com.atqiyu.douyinkit.download.DownloadRegistry
@@ -47,6 +48,7 @@ class FloatingParseQueue(
     private val settingsRepository = appContext.appContainer.settingsRepository
     private val historyRepository = appContext.appContainer.historyRepository
     private val downloadHistoryRepository = appContext.appContainer.downloadHistoryRepository
+    private val shareLinkRepository = appContext.appContainer.shareLinkRepository
 
     private val pending = ArrayDeque<String>()
     private val lock = Any()
@@ -105,9 +107,18 @@ class FloatingParseQueue(
 
     fun isBusy(): Boolean = pumpJob?.isActive == true || activeLink != null
 
+    fun currentQueueSize(): Int = synchronized(lock) {
+        pending.size + if (activeLink != null) 1 else 0
+    }
+
     fun stopAll() {
         synchronized(lock) {
             pending.clear()
+        }
+        activeLink?.let { link ->
+            scope.launch {
+                runCatching { shareLinkRepository.markFailed(link, "已停止") }
+            }
         }
         activeDownloadId?.let { DownloadService.cancel(appContext, it) }
         activeDownloadId = null
@@ -222,6 +233,7 @@ class FloatingParseQueue(
         val parser = ensureController()
         Log.d(TAG, "parsing queued link, controller=${parser != null}")
         if (parser == null) {
+            runCatching { shareLinkRepository.markFailed(link, "无法启动后台解析") }
             FloatingAssistantBus.update {
                 it.copy(
                     phase = FloatingPhase.ERROR,
@@ -232,6 +244,7 @@ class FloatingParseQueue(
             }
             return
         }
+        runCatching { shareLinkRepository.markProcessing(link) }
         verificationDismissed = false
         FloatingAssistantBus.update {
             it.copy(
@@ -259,6 +272,7 @@ class FloatingParseQueue(
             if (finalState == null) {
                 watchdogFailure = true
                 parser.cancel()
+                runCatching { shareLinkRepository.markFailed(link, "解析超时") }
                 FloatingAssistantBus.update {
                     it.copy(
                         phase = FloatingPhase.ERROR,
@@ -279,6 +293,7 @@ class FloatingParseQueue(
                 watchdogFailure = failure?.code == ErrorCode.DETAIL_TIMEOUT ||
                     failure?.code == ErrorCode.WEBVIEW_UNAVAILABLE
                 val message = failure?.message ?: "没有解析到作品"
+                runCatching { shareLinkRepository.markFailed(link, message) }
                 FloatingAssistantBus.update {
                     it.copy(
                         phase = FloatingPhase.ERROR,
@@ -314,11 +329,31 @@ class FloatingParseQueue(
                 )
             }
             val settings = settingsRepository.settings.first()
-            if (settings.floatingAutoDownload) {
-                autoDownload(aweme, settings)
-            } else {
-                FloatingAssistantBus.update {
-                    it.copy(message = "解析完成，可在 DouyinKit 中查看并下载")
+            when (settings.floatingQueueMode) {
+                FloatingQueueMode.PARSE_AND_DOWNLOAD -> {
+                    runCatching {
+                        shareLinkRepository.markCompleted(
+                            url = link,
+                            awemeId = aweme.awemeId,
+                            title = aweme.displayTitle,
+                            message = "解析完成，正在自动下载",
+                        )
+                    }
+                    autoDownload(aweme, settings)
+                }
+
+                FloatingQueueMode.PARSE_ONLY, FloatingQueueMode.RECORD_ONLY -> {
+                    runCatching {
+                        shareLinkRepository.markCompleted(
+                            url = link,
+                            awemeId = aweme.awemeId,
+                            title = aweme.displayTitle,
+                            message = "解析完成（未下载）",
+                        )
+                    }
+                    FloatingAssistantBus.update {
+                        it.copy(message = "解析完成，可在 DouyinKit 中查看并下载")
+                    }
                 }
             }
         } finally {
@@ -394,9 +429,16 @@ class FloatingParseQueue(
         }
     }
 
+    private suspend fun updateActiveLinkMessage(message: String) {
+        activeLink?.let { link ->
+            runCatching { shareLinkRepository.markCompleted(url = link, message = message) }
+        }
+    }
+
     private suspend fun autoDownload(aweme: Aweme, settings: AppSettings) {
         val request = buildFloatingDownloadRequest(aweme, settings)
         if (request == null) {
+            updateActiveLinkMessage("解析完成，但没有可自动下载的内容")
             FloatingAssistantBus.update { it.copy(message = "解析完成，但没有可自动下载的内容") }
             return
         }
@@ -427,6 +469,14 @@ class FloatingParseQueue(
             }
         }
         if (finalRequest == null) {
+            activeLink?.let { link ->
+                runCatching {
+                    shareLinkRepository.markCompleted(
+                        url = link,
+                        message = "该作品内容已经下载过，已跳过",
+                    )
+                }
+            }
             FloatingAssistantBus.update {
                 it.copy(
                     phase = FloatingPhase.DONE,
@@ -440,6 +490,7 @@ class FloatingParseQueue(
         val taskId = runCatching {
             DownloadService.enqueue(appContext, finalRequest)
         }.getOrElse { error ->
+            updateActiveLinkMessage("无法开始自动下载：${error.message ?: "系统限制"}")
             FloatingAssistantBus.update {
                 it.copy(
                     phase = FloatingPhase.ERROR,
@@ -493,6 +544,7 @@ class FloatingParseQueue(
         val task = finished ?: DownloadRegistry.get(taskId)
         when (task?.status) {
             DownloadStatus.COMPLETED -> {
+                updateActiveLinkMessage("已保存到相册")
                 FloatingAssistantBus.update {
                     it.copy(
                         phase = FloatingPhase.DONE,
@@ -504,6 +556,7 @@ class FloatingParseQueue(
             }
 
             DownloadStatus.PARTIAL -> {
+                updateActiveLinkMessage("部分文件没有保存成功，可在下载页查看")
                 FloatingAssistantBus.update {
                     it.copy(
                         phase = FloatingPhase.ERROR,
@@ -514,12 +567,14 @@ class FloatingParseQueue(
             }
 
             DownloadStatus.CANCELLED -> {
+                updateActiveLinkMessage("自动下载已取消")
                 FloatingAssistantBus.update {
                     it.copy(phase = FloatingPhase.IDLE, message = "自动下载已取消", progress = null)
                 }
             }
 
             DownloadStatus.FAILED, DownloadStatus.NEEDS_REFRESH -> {
+                updateActiveLinkMessage(task.message.ifBlank { "自动下载失败" })
                 FloatingAssistantBus.update {
                     it.copy(
                         phase = FloatingPhase.ERROR,
@@ -530,6 +585,7 @@ class FloatingParseQueue(
             }
 
             else -> {
+                updateActiveLinkMessage("自动下载等待超时，请在下载页查看")
                 FloatingAssistantBus.update {
                     it.copy(
                         phase = FloatingPhase.ERROR,

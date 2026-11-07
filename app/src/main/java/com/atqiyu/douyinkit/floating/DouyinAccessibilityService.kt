@@ -145,6 +145,8 @@ class DouyinAccessibilityService : AccessibilityService() {
             Log.d(TAG, "dismissing share sheet")
             dismissShareSheet()
         }
+        delay(250)
+        dismissCopiedLinkCard()
         AutomationResult.Success
     }
 
@@ -223,6 +225,93 @@ class DouyinAccessibilityService : AccessibilityService() {
             .addStroke(GestureDescription.StrokeDescription(path, 0L, 60L))
             .build()
         dispatchGesture(gesture, null, null)
+    }
+
+    /**
+     * Douyin shows a "链接已复制成功 / 去分享" card after copying the share link. It covers
+     * the bottom of the video and stays until dismissed, so the queue automation closes it
+     * before looking for the next video.
+     */
+    private suspend fun dismissCopiedLinkCard() {
+        val deadline = SystemClock.uptimeMillis() + 5_000L
+        while (SystemClock.uptimeMillis() < deadline) {
+            val root = rootInActiveWindow
+            if (root == null) {
+                delay(250)
+                continue
+            }
+            val nodes = collectNodes(root)
+            val labelNodes = nodes.filter { node ->
+                node.isVisibleToUser && run {
+                    val label = node.text?.toString().orEmpty()
+                        .ifBlank { node.contentDescription?.toString().orEmpty() }
+                    label.contains("链接已复制") ||
+                        label.contains("复制成功") ||
+                        label.contains("去分享") ||
+                        label.contains("去粘贴分享")
+                }
+            }
+            if (labelNodes.isEmpty()) {
+                delay(250)
+                continue
+            }
+            val labelBounds = Rect().apply {
+                labelNodes.forEach { node ->
+                    val bounds = Rect()
+                    node.getBoundsInScreen(bounds)
+                    union(bounds)
+                }
+            }
+            if (labelBounds.width() <= 0) {
+                delay(250)
+                continue
+            }
+            val screenWidth = resources.displayMetrics.widthPixels
+            val slack = dp(26)
+            val close = nodes.asSequence()
+                .filter { it.isVisibleToUser }
+                .filter { it.isClickable || clickableAncestor(it) != null }
+                .map { node ->
+                    node to Rect().also { node.getBoundsInScreen(it) }
+                }
+                .filter { (_, bounds) ->
+                    bounds.width() > 0 && bounds.height() > 0 &&
+                        bounds.centerY() in (labelBounds.top - slack)..(labelBounds.bottom + slack) &&
+                        bounds.centerX() > labelBounds.right - dp(4) &&
+                        bounds.centerX() < screenWidth &&
+                        bounds.width() <= dp(96) &&
+                        bounds.height() <= dp(96)
+                }
+                .minByOrNull { (_, bounds) -> bounds.width() * bounds.height() }
+                ?.first
+            if (close != null) {
+                Log.d(TAG, "closing copied-link card by node")
+                if (clickNode(close)) {
+                    delay(260)
+                    return
+                }
+            }
+            val x = (labelBounds.right + dp(24)).coerceAtMost(screenWidth - dp(8))
+            val y = labelBounds.centerY()
+            Log.d(TAG, "tapping copied-link card close area")
+            tap(x, y)
+            delay(280)
+            return
+        }
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    private fun tap(x: Int, y: Int): Boolean {
+        val path = Path().apply {
+            moveTo(x.toFloat(), y.toFloat())
+            lineTo(x.toFloat(), y.toFloat())
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, 60L))
+            .build()
+        return dispatchGesture(gesture, null, null)
     }
 
     private fun revealShareLink() {

@@ -6,6 +6,7 @@ import com.atqiyu.douyinkit.core.net.HttpClients
 import com.atqiyu.douyinkit.data.DownloadCollectionRepository
 import com.atqiyu.douyinkit.data.DownloadHistoryRepository
 import com.atqiyu.douyinkit.data.HistoryRepository
+import com.atqiyu.douyinkit.data.ShareLinkRepository
 import com.atqiyu.douyinkit.data.db.AppDatabase
 import com.atqiyu.douyinkit.data.prefs.SettingsRepository
 import com.atqiyu.douyinkit.parser.DouyinDetailNormalizer
@@ -20,6 +21,7 @@ class AppContainer(context: Context) {
         DownloadHistoryRepository(database.downloadHistoryDao())
     val downloadCollectionRepository: DownloadCollectionRepository =
         DownloadCollectionRepository(database.downloadCollectionDao())
+    val shareLinkRepository: ShareLinkRepository = ShareLinkRepository(database.shareLinkDao())
     val settingsRepository: SettingsRepository = SettingsRepository(appContext)
 
     fun newShortLinkResolver(): ShortLinkResolver = ShortLinkResolver(HttpClients.shortLink())

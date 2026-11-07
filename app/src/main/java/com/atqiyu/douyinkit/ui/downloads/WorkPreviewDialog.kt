@@ -2,6 +2,7 @@ package com.atqiyu.douyinkit.ui.downloads
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -14,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -86,11 +88,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.atqiyu.douyinkit.core.model.AwemeKind
 import com.atqiyu.douyinkit.core.util.formatBytes
 import com.atqiyu.douyinkit.core.util.formatCount
 import com.atqiyu.douyinkit.core.util.formatCreateTime
+import com.atqiyu.douyinkit.data.prefs.AppSettings
+import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.download.DownloadService
 import com.atqiyu.douyinkit.download.DownloadStatus
 import com.atqiyu.douyinkit.download.DownloadTask
@@ -115,13 +120,25 @@ fun WorkPreviewDialog(
     initialFileUri: String? = null,
 ) {
     if (groups.isEmpty()) return
+    val context = LocalContext.current
+    val settings by context.appContainer.settingsRepository.settings
+        .collectAsStateWithLifecycle(initialValue = AppSettings())
     val initialIndex = remember(groups, initialAwemeId) {
         groups.indexOfFirst { it.awemeId == initialAwemeId }.coerceAtLeast(0)
     }
     val pagerState = rememberPagerState(initialPage = initialIndex) { groups.size }
     var detailsOpen by remember { mutableStateOf(false) }
+    var infoVisible by remember { mutableStateOf(true) }
+    val initialGroup = groups.getOrNull(initialIndex)
+    var topState by remember(initialGroup?.awemeId) {
+        mutableStateOf(initialGroup?.let(::fallbackTopState))
+    }
     LaunchedEffect(pagerState.currentPage) {
         detailsOpen = false
+        val current = groups.getOrNull(pagerState.currentPage)
+        if (current != null && topState?.awemeId != current.awemeId) {
+            topState = fallbackTopState(current)
+        }
     }
 
     Dialog(
@@ -153,11 +170,222 @@ fun WorkPreviewDialog(
                     active = active,
                     initialFileUri = if (pageIndex == initialIndex) initialFileUri else null,
                     detailsOpen = detailsOpen && active,
+                    infoVisible = infoVisible,
+                    onTopStateChange = { if (active) topState = it },
                     onDetailsOpenChange = { open ->
                         if (active) detailsOpen = open
                     },
-                    onDismiss = onDismiss,
                     onRemoveGroup = onRemoveGroup,
+                )
+            }
+
+            topState?.let { state ->
+                PreviewTopOverlay(
+                    state = state,
+                    infoVisible = infoVisible,
+                    overlayOpacity = settings.previewOverlayOpacity,
+                    onDismiss = onDismiss,
+                    onDetails = { detailsOpen = true },
+                    onShare = { item -> shareSavedFile(context, item.file) },
+                    onOpen = { item -> openSavedFile(context, item.file) },
+                    onToggleInfo = { infoVisible = !infoVisible },
+                )
+            }
+        }
+    }
+}
+
+private data class PreviewTopState(
+    val awemeId: String,
+    val subtitle: String,
+    val displayItem: GroupMediaItem?,
+    val showLiveHint: Boolean = false,
+    val imagePageLabel: String? = null,
+)
+
+private fun fallbackTopState(group: DownloadGroup): PreviewTopState {
+    return PreviewTopState(
+        awemeId = group.awemeId,
+        subtitle = if (group.isActive) {
+            group.statusLine
+        } else {
+            "${group.fileCount} 个文件 · ${formatBytes(group.totalBytes)}"
+        },
+        displayItem = group.featuredMedia,
+    )
+}
+
+@Composable
+private fun BoxScope.PreviewTopOverlay(
+    state: PreviewTopState,
+    infoVisible: Boolean,
+    overlayOpacity: Float,
+    onDismiss: () -> Unit,
+    onDetails: () -> Unit,
+    onShare: (GroupMediaItem) -> Unit,
+    onOpen: (GroupMediaItem) -> Unit,
+    onToggleInfo: () -> Unit,
+) {
+    val opacity = overlayOpacity.coerceIn(0.5f, 1f)
+    val topContentAlpha by animateFloatAsState(
+        targetValue = if (infoVisible) 1f else 0f,
+        animationSpec = tween(durationMillis = 220),
+        label = "preview-top-content-alpha",
+    )
+    val toggleAlpha by animateFloatAsState(
+        targetValue = if (infoVisible) 0.82f else 0.58f,
+        animationSpec = tween(durationMillis = 220),
+        label = "preview-toggle-alpha",
+    )
+    Box(
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .fillMaxWidth()
+            .height(190.dp)
+            .alpha(topContentAlpha * opacity)
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.Black.copy(alpha = 0.82f), Color.Transparent),
+                ),
+            ),
+    )
+    Row(
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        IconButton(
+            onClick = onDismiss,
+            enabled = infoVisible,
+            modifier = Modifier
+                .alpha(topContentAlpha * opacity)
+                .background(Color.Black.copy(alpha = 0.3f), CircleShape),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "关闭作品预览",
+                tint = Color.White,
+            )
+        }
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .alpha(topContentAlpha * opacity),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "作品预览",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Crossfade(
+                    targetState = state.subtitle,
+                    animationSpec = tween(durationMillis = 180),
+                    label = "preview-subtitle",
+                ) { subtitle ->
+                    Text(
+                        text = subtitle,
+                        color = Color.White.copy(alpha = 0.62f),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            HeaderAction(
+                icon = Icons.Default.Info,
+                label = "作品与文件详情",
+                enabled = infoVisible,
+                onClick = onDetails,
+            )
+            HeaderAction(
+                icon = Icons.Default.Share,
+                label = "分享当前文件",
+                enabled = infoVisible && state.displayItem != null,
+                onClick = { state.displayItem?.let(onShare) },
+            )
+            HeaderAction(
+                icon = Icons.AutoMirrored.Filled.OpenInNew,
+                label = "打开当前文件",
+                enabled = infoVisible && state.displayItem != null,
+                onClick = { state.displayItem?.let(onOpen) },
+            )
+        }
+        Box(modifier = Modifier.alpha(toggleAlpha * opacity)) {
+            HeaderAction(
+                icon = if (infoVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                label = if (infoVisible) "隐藏作品信息" else "显示作品信息",
+                onClick = onToggleInfo,
+            )
+        }
+    }
+
+    AnimatedVisibility(
+        visible = infoVisible && state.showLiveHint,
+        modifier = Modifier.align(Alignment.TopCenter),
+        enter = fadeIn(tween(200)),
+        exit = fadeOut(tween(150)),
+    ) {
+        Surface(
+            modifier = Modifier
+                .statusBarsPadding()
+                .padding(top = 98.dp),
+            color = Color.Black.copy(alpha = 0.42f),
+            shape = CircleShape,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayCircle,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    text = "点击播放动图",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+    }
+
+    val pageLabel = state.imagePageLabel
+    AnimatedVisibility(
+        visible = infoVisible && pageLabel != null,
+        modifier = Modifier.align(Alignment.TopCenter),
+        enter = fadeIn(tween(200)),
+        exit = fadeOut(tween(150)),
+    ) {
+        Surface(
+            modifier = Modifier
+                .statusBarsPadding()
+                .padding(top = 62.dp),
+            color = Color.Black.copy(alpha = 0.36f),
+            shape = CircleShape,
+        ) {
+            Crossfade(
+                targetState = pageLabel.orEmpty(),
+                animationSpec = tween(durationMillis = 160),
+                label = "preview-page-label",
+            ) { label ->
+                Text(
+                    text = label,
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                 )
             }
         }
@@ -170,11 +398,11 @@ private fun WorkPreviewPage(
     active: Boolean,
     initialFileUri: String?,
     detailsOpen: Boolean,
+    infoVisible: Boolean,
+    onTopStateChange: (PreviewTopState) -> Unit,
     onDetailsOpenChange: (Boolean) -> Unit,
-    onDismiss: () -> Unit,
     onRemoveGroup: (DownloadGroup) -> Unit,
 ) {
-    val context = LocalContext.current
     var selectedUri by remember(group.awemeId) {
         mutableStateOf(initialFileUri ?: group.featuredMedia?.file?.uri?.toString())
     }
@@ -211,18 +439,7 @@ private fun WorkPreviewPage(
     }
     var audioPreview by remember { mutableStateOf<GroupMediaItem?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
-    var infoVisible by remember(group.awemeId) { mutableStateOf(true) }
     var playingLiveUri by remember(group.awemeId) { mutableStateOf<String?>(null) }
-    val topContentAlpha by animateFloatAsState(
-        targetValue = if (infoVisible) 1f else 0f,
-        animationSpec = tween(durationMillis = 220),
-        label = "preview-top-content-alpha",
-    )
-    val toggleAlpha by animateFloatAsState(
-        targetValue = if (infoVisible) 0.82f else 0.58f,
-        animationSpec = tween(durationMillis = 220),
-        label = "preview-toggle-alpha",
-    )
     val imageBgmItem = group.audioItems.firstOrNull()
     val imageBgmUrl = if (group.aweme.kind == AwemeKind.IMAGES) {
         imageBgmItem?.file?.uri?.toString()
@@ -237,6 +454,46 @@ private fun WorkPreviewPage(
 
     LaunchedEffect(imagePagerState.currentPage) {
         playingLiveUri = null
+    }
+
+    val currentLive = if (selected?.kind == GroupMediaKind.IMAGE) {
+        currentImagePage?.live
+    } else {
+        null
+    }
+    LaunchedEffect(
+        active,
+        group.awemeId,
+        group.isActive,
+        group.statusLine,
+        group.fileCount,
+        group.totalBytes,
+        displayItem,
+        imagePagerState.currentPage,
+        imagePages.size,
+        playingLiveUri,
+    ) {
+        if (!active) return@LaunchedEffect
+        onTopStateChange(
+            PreviewTopState(
+                awemeId = group.awemeId,
+                subtitle = if (group.isActive) {
+                    group.statusLine
+                } else {
+                    "${group.fileCount} 个文件 · ${formatBytes(group.totalBytes)}"
+                },
+                displayItem = displayItem,
+                showLiveHint = currentLive != null &&
+                    playingLiveUri != currentLive.file.uri.toString(),
+                imagePageLabel = if (
+                    selected?.kind == GroupMediaKind.IMAGE && imagePages.size > 1
+                ) {
+                    "${imagePagerState.currentPage + 1} / ${imagePages.size}"
+                } else {
+                    null
+                },
+            ),
+        )
     }
 
     fun select(item: GroupMediaItem) {
@@ -326,160 +583,6 @@ private fun WorkPreviewPage(
                 url = imageBgmUrl,
                 enabled = imageBgmEnabled,
             )
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .height(190.dp)
-                .alpha(topContentAlpha)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Black.copy(alpha = 0.82f), Color.Transparent),
-                    ),
-                ),
-        )
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            IconButton(
-                onClick = onDismiss,
-                enabled = infoVisible,
-                modifier = Modifier
-                    .alpha(topContentAlpha)
-                    .background(Color.Black.copy(alpha = 0.3f), CircleShape),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "关闭作品预览",
-                    tint = Color.White,
-                )
-            }
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .alpha(topContentAlpha),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "作品预览",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = if (group.isActive) {
-                            group.statusLine
-                        } else {
-                            "${group.fileCount} 个文件 · ${formatBytes(group.totalBytes)}"
-                        },
-                        color = Color.White.copy(alpha = 0.62f),
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                HeaderAction(
-                    icon = Icons.Default.Info,
-                    label = "作品与文件详情",
-                    enabled = infoVisible,
-                    onClick = { onDetailsOpenChange(true) },
-                )
-                HeaderAction(
-                    icon = Icons.Default.Share,
-                    label = "分享当前文件",
-                    enabled = infoVisible && displayItem != null,
-                    onClick = { displayItem?.let { shareSavedFile(context, it.file) } },
-                )
-                HeaderAction(
-                    icon = Icons.AutoMirrored.Filled.OpenInNew,
-                    label = "打开当前文件",
-                    enabled = infoVisible && displayItem != null,
-                    onClick = { displayItem?.let { openSavedFile(context, it.file) } },
-                )
-            }
-            Box(modifier = Modifier.alpha(toggleAlpha)) {
-                HeaderAction(
-                    icon = if (infoVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                    label = if (infoVisible) "隐藏作品信息" else "显示作品信息",
-                    onClick = { infoVisible = !infoVisible },
-                )
-            }
-        }
-
-        val currentLive = if (selected?.kind == GroupMediaKind.IMAGE) {
-            currentImagePage?.live
-        } else {
-            null
-        }
-        AnimatedVisibility(
-            visible = infoVisible &&
-                currentLive != null &&
-                playingLiveUri != currentLive.file.uri.toString(),
-            modifier = Modifier.align(Alignment.TopCenter),
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(150)),
-        ) {
-            Surface(
-                modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(top = 98.dp),
-                color = Color.Black.copy(alpha = 0.42f),
-                shape = CircleShape,
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayCircle,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Text(
-                        text = "点击播放动图",
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = infoVisible &&
-                selected?.kind == GroupMediaKind.IMAGE &&
-                imagePages.size > 1,
-            modifier = Modifier.align(Alignment.TopCenter),
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(150)),
-        ) {
-            Surface(
-                modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(top = 62.dp),
-                color = Color.Black.copy(alpha = 0.36f),
-                shape = CircleShape,
-            ) {
-                Text(
-                    text = "${imagePagerState.currentPage + 1} / ${imagePages.size}",
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                )
-            }
         }
 
         AnimatedVisibility(

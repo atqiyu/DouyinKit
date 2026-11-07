@@ -37,6 +37,14 @@ data class ParseFailure(
     val code: ErrorCode? = null,
 )
 
+data class ParseItemResult(
+    val input: String,
+    val awemeId: String? = null,
+    val title: String? = null,
+    val success: Boolean,
+    val message: String = "",
+)
+
 data class ParseUiState(
     val running: Boolean = false,
     val stage: ParseStage = ParseStage.IDLE,
@@ -49,6 +57,7 @@ data class ParseUiState(
     val message: String = "",
     val results: List<Aweme> = emptyList(),
     val failures: List<ParseFailure> = emptyList(),
+    val outcomes: List<ParseItemResult> = emptyList(),
     val pageState: PageState? = null,
 ) {
     val currentNumber: Int get() = if (total == 0) 0 else (currentIndex + 1).coerceAtMost(total)

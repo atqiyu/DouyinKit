@@ -47,7 +47,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -270,19 +269,19 @@ fun DouyinVideoPlayer(
                 Box(
                     modifier = Modifier
                         .size(66.dp)
-                        .background(Color.Black.copy(alpha = 0.35f), CircleShape),
+                        .background(Color.Black.copy(alpha = 0.2f), CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = "播放",
-                        tint = Color.White,
+                        tint = Color.White.copy(alpha = 0.68f),
                         modifier = Modifier.size(40.dp),
                     )
                 }
                 Text(
                     text = "点击播放",
-                    color = Color.White.copy(alpha = 0.72f),
+                    color = Color.White.copy(alpha = 0.52f),
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
@@ -391,12 +390,12 @@ private fun VideoProgressLine(
         ) {
             val trackY = size.height - 6.dp.toPx()
             val activeX = size.width * animatedFraction
-            val activeColor = lerp(Color.White, ScrubRed, scrubHighlight)
-            val inactiveColor = Color.White.copy(alpha = 0.28f + 0.22f * scrubHighlight)
-            val activeStroke = 2.5.dp.toPx() + 3.5.dp.toPx() * scrubHighlight
+            val activeColor = Color.White.copy(alpha = 0.9f + 0.1f * scrubHighlight)
+            val inactiveColor = Color.White.copy(alpha = 0.28f + 0.2f * scrubHighlight)
+            val activeStroke = 2.5.dp.toPx() + 1.2.dp.toPx() * scrubHighlight
             if (scrubHighlight > 0.01f) {
                 drawLine(
-                    color = ScrubRedGlow.copy(alpha = 0.24f * scrubHighlight),
+                    color = Color.White.copy(alpha = 0.16f * scrubHighlight),
                     start = Offset(0f, trackY),
                     end = Offset(activeX, trackY),
                     strokeWidth = 13.dp.toPx() * scrubHighlight,
@@ -407,7 +406,7 @@ private fun VideoProgressLine(
                 color = inactiveColor,
                 start = Offset(0f, trackY),
                 end = Offset(size.width, trackY),
-                strokeWidth = 2.dp.toPx() + 1.dp.toPx() * scrubHighlight,
+                strokeWidth = 2.dp.toPx() + 0.8.dp.toPx() * scrubHighlight,
                 cap = StrokeCap.Round,
             )
             drawLine(
@@ -421,25 +420,25 @@ private fun VideoProgressLine(
                 val knobY = trackY - 19.dp.toPx() * scrubHighlight
                 val knobRadius = 6.dp.toPx() * scrubHighlight
                 drawLine(
-                    color = ScrubRed.copy(alpha = 0.92f),
+                    color = Color.White.copy(alpha = 0.95f),
                     start = Offset(activeX, knobY),
                     end = Offset(activeX, trackY),
                     strokeWidth = 2.5.dp.toPx(),
                     cap = StrokeCap.Round,
                 )
                 drawCircle(
-                    color = ScrubRedGlow.copy(alpha = 0.3f * scrubHighlight),
+                    color = Color.White.copy(alpha = 0.26f * scrubHighlight),
                     radius = knobRadius * 2.7f,
                     center = Offset(activeX, knobY),
                 )
                 drawCircle(
-                    color = ScrubRed,
+                    color = Color.White,
                     radius = knobRadius,
                     center = Offset(activeX, knobY),
                 )
                 drawCircle(
                     color = Color.White,
-                    radius = knobRadius * 0.38f,
+                    radius = knobRadius * 0.4f,
                     center = Offset(activeX, knobY),
                 )
             }
@@ -447,6 +446,3 @@ private fun VideoProgressLine(
 
     }
 }
-
-private val ScrubRed = Color(0xFFFF3B5C)
-private val ScrubRedGlow = Color(0xFFFF6680)

@@ -2,6 +2,7 @@ package com.atqiyu.douyinkit.floating
 
 import com.atqiyu.douyinkit.data.prefs.FloatingMode
 import com.atqiyu.douyinkit.data.prefs.FloatingPanelStyle
+import com.atqiyu.douyinkit.data.prefs.FloatingQueueMode
 
 enum class DouyinTarget { MAIN, LITE }
 
@@ -23,7 +24,9 @@ enum class FloatingPhase { IDLE, WAITING, PARSING, VERIFYING, DOWNLOADING, DONE,
 data class FloatingUiState(
     val enabled: Boolean = false,
     val mode: FloatingMode = FloatingMode.STANDARD,
-    val autoDownload: Boolean = true,
+    val queueMode: FloatingQueueMode = FloatingQueueMode.PARSE_AND_DOWNLOAD,
+    val settingsLoaded: Boolean = false,
+    val hidePanel: Boolean = false,
     val accessibilityReady: Boolean = false,
     val overlayReady: Boolean = false,
     val foreground: ForegroundTarget = ForegroundTarget.UNKNOWN,
@@ -54,6 +57,17 @@ data class FloatingUiState(
     val panelMinWidthDp: Int = 160,
     val panelMinHeightDp: Int = 64,
     val idleTimeoutSeconds: Int = 45,
+    val panelPaddingLeftDp: Int = 8,
+    val panelPaddingTopDp: Int = 4,
+    val panelPaddingRightDp: Int = 8,
+    val panelPaddingBottomDp: Int = 6,
+    val panelDragHandleTopDp: Int = 2,
+    val orbXFraction: Float = -1f,
+    val orbYFraction: Float = -1f,
+    val panelXFraction: Float = -1f,
+    val panelYFraction: Float = -1f,
+    val panelWidthDp: Int = 0,
+    val panelHeightDp: Int = 0,
 )
 
 object DouyinPackages {

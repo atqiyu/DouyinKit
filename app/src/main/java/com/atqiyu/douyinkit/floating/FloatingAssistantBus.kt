@@ -1,6 +1,7 @@
 package com.atqiyu.douyinkit.floating
 
 import com.atqiyu.douyinkit.data.prefs.FloatingMode
+import com.atqiyu.douyinkit.data.prefs.FloatingQueueMode
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -36,8 +37,8 @@ object FloatingAssistantBus {
         update { it.copy(mode = mode) }
     }
 
-    fun setAutoDownload(enabled: Boolean) {
-        update { it.copy(autoDownload = enabled) }
+    fun setQueueMode(mode: FloatingQueueMode) {
+        update { it.copy(queueMode = mode) }
     }
 
     fun setAccessibilityReady(ready: Boolean) {

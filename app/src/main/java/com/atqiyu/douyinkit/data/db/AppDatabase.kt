@@ -13,8 +13,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DownloadHistoryEntity::class,
         DownloadCollectionEntity::class,
         DownloadCollectionMemberEntity::class,
+        ShareLinkRecordEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -23,6 +24,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadHistoryDao(): DownloadHistoryDao
 
     abstract fun downloadCollectionDao(): DownloadCollectionDao
+
+    abstract fun shareLinkDao(): ShareLinkDao
 
     companion object {
         private val MIGRATION_2_3 = object : Migration(2, 3) {
@@ -46,13 +49,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `share_link_records` (" +
+                        "`url` TEXT NOT NULL, `awemeId` TEXT, `title` TEXT, " +
+                        "`status` TEXT NOT NULL, `message` TEXT, " +
+                        "`firstCapturedAt` INTEGER NOT NULL, " +
+                        "`lastCapturedAt` INTEGER NOT NULL, " +
+                        "`captureCount` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, `completedAt` INTEGER, " +
+                        "PRIMARY KEY(`url`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_share_link_records_status` " +
+                        "ON `share_link_records` (`status`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_share_link_records_lastCapturedAt` " +
+                        "ON `share_link_records` (`lastCapturedAt`)",
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase {
             return Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 "douyinkit.db",
             )
-                .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
         }

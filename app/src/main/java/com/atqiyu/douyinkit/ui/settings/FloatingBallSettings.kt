@@ -61,6 +61,7 @@ import com.atqiyu.douyinkit.data.prefs.AppSettings
 import com.atqiyu.douyinkit.data.prefs.FloatingMode
 import com.atqiyu.douyinkit.data.prefs.FloatingPanelColor
 import com.atqiyu.douyinkit.data.prefs.FloatingPanelStyle
+import com.atqiyu.douyinkit.data.prefs.FloatingQueueMode
 import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.floating.FloatingAssistantBus
 import com.atqiyu.douyinkit.floating.FloatingAssistantScheduler
@@ -245,6 +246,17 @@ fun FloatingBallSettings() {
                         scope.launch {
                             context.appContainer.settingsRepository
                                 .setFloatingTapShowsPanel(checked)
+                        }
+                    },
+                )
+                FloatingSwitchRow(
+                    title = "不再显示浮窗",
+                    subtitle = "解析、下载和连播时都不自动弹出浮窗；状态仍显示在通知和浮球外圈",
+                    checked = current.floatingHidePanel,
+                    onCheckedChange = { checked ->
+                        scope.launch {
+                            context.appContainer.settingsRepository
+                                .setFloatingHidePanel(checked)
                         }
                     },
                 )
@@ -464,6 +476,109 @@ fun FloatingBallSettings() {
                     modifier = Modifier.padding(bottom = 2.dp),
                 )
                 Text(
+                    text = "浮窗内边距",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+                )
+                FloatingSliderRow(
+                    title = "左边距",
+                    valueText = "${current.floatingPanelPaddingLeftDp} dp",
+                    value = current.floatingPanelPaddingLeftDp.toFloat(),
+                    valueRange = 0f..24f,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository.setFloatingPanelPadding(
+                                left = value.toInt(),
+                                top = current.floatingPanelPaddingTopDp,
+                                right = current.floatingPanelPaddingRightDp,
+                                bottom = current.floatingPanelPaddingBottomDp,
+                            )
+                        }
+                    },
+                )
+                FloatingSliderRow(
+                    title = "上边距",
+                    valueText = "${current.floatingPanelPaddingTopDp} dp",
+                    value = current.floatingPanelPaddingTopDp.toFloat(),
+                    valueRange = 0f..24f,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository.setFloatingPanelPadding(
+                                left = current.floatingPanelPaddingLeftDp,
+                                top = value.toInt(),
+                                right = current.floatingPanelPaddingRightDp,
+                                bottom = current.floatingPanelPaddingBottomDp,
+                            )
+                        }
+                    },
+                )
+                FloatingSliderRow(
+                    title = "右边距",
+                    valueText = "${current.floatingPanelPaddingRightDp} dp",
+                    value = current.floatingPanelPaddingRightDp.toFloat(),
+                    valueRange = 0f..24f,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository.setFloatingPanelPadding(
+                                left = current.floatingPanelPaddingLeftDp,
+                                top = current.floatingPanelPaddingTopDp,
+                                right = value.toInt(),
+                                bottom = current.floatingPanelPaddingBottomDp,
+                            )
+                        }
+                    },
+                )
+                FloatingSliderRow(
+                    title = "下边距",
+                    valueText = "${current.floatingPanelPaddingBottomDp} dp",
+                    value = current.floatingPanelPaddingBottomDp.toFloat(),
+                    valueRange = 0f..24f,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository.setFloatingPanelPadding(
+                                left = current.floatingPanelPaddingLeftDp,
+                                top = current.floatingPanelPaddingTopDp,
+                                right = current.floatingPanelPaddingRightDp,
+                                bottom = value.toInt(),
+                            )
+                        }
+                    },
+                )
+                FloatingSliderRow(
+                    title = "拖动条上边距",
+                    valueText = "${current.floatingPanelDragHandleTopDp} dp",
+                    value = current.floatingPanelDragHandleTopDp.toFloat(),
+                    valueRange = 0f..20f,
+                    onValueChange = { value ->
+                        scope.launch {
+                            context.appContainer.settingsRepository
+                                .setFloatingPanelDragHandleTop(value.toInt())
+                        }
+                    },
+                )
+                Text(
+                    "文字超出浮窗高度时直接截断，不在浮窗内滚动。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            context.appContainer.settingsRepository.resetFloatingGeometry()
+                            FloatingAssistantService.stop(context)
+                            kotlinx.coroutines.delay(300)
+                            runCatching { FloatingAssistantService.start(context) }
+                            FloatingAssistantBus.update {
+                                it.copy(message = "已恢复默认位置和大小")
+                            }
+                        }
+                    },
+                ) {
+                    Text("恢复浮球与浮窗默认位置/大小")
+                }
+                Text(
                     text = "自动休眠",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -506,17 +621,77 @@ fun FloatingBallSettings() {
                     color = MaterialTheme.colorScheme.outlineVariant,
                     modifier = Modifier.padding(vertical = 8.dp),
                 )
-                FloatingSwitchRow(
-                    title = "连播自动下载",
-                    subtitle = "沿用下载默认值：视频默认清晰度；图集按 LivePhoto/BGM/ZIP 开关；不含封面",
-                    checked = settings?.floatingAutoDownload == true,
-                    enabled = settings?.floatingMode == FloatingMode.AUTO,
-                    onCheckedChange = { checked ->
-                        scope.launch {
-                            context.appContainer.settingsRepository.setFloatingAutoDownload(checked)
-                            FloatingAssistantBus.setAutoDownload(checked)
-                        }
+                Text(
+                    text = "连播处理方式",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        QueueModeChip(
+                            selected = current.floatingQueueMode ==
+                                FloatingQueueMode.PARSE_AND_DOWNLOAD,
+                            label = "连播解析并下载",
+                            onClick = {
+                                scope.launch {
+                                    context.appContainer.settingsRepository
+                                        .setFloatingQueueMode(
+                                            FloatingQueueMode.PARSE_AND_DOWNLOAD,
+                                        )
+                                    FloatingAssistantBus.setQueueMode(
+                                        FloatingQueueMode.PARSE_AND_DOWNLOAD,
+                                    )
+                                }
+                            },
+                        )
+                        QueueModeChip(
+                            selected = current.floatingQueueMode ==
+                                FloatingQueueMode.PARSE_ONLY,
+                            label = "连播解析不下载",
+                            onClick = {
+                                scope.launch {
+                                    context.appContainer.settingsRepository
+                                        .setFloatingQueueMode(
+                                            FloatingQueueMode.PARSE_ONLY,
+                                        )
+                                    FloatingAssistantBus.setQueueMode(
+                                        FloatingQueueMode.PARSE_ONLY,
+                                    )
+                                }
+                            },
+                        )
+                    }
+                    QueueModeChip(
+                        selected = current.floatingQueueMode ==
+                            FloatingQueueMode.RECORD_ONLY,
+                        label = "连播不解析不下载",
+                        onClick = {
+                            scope.launch {
+                                context.appContainer.settingsRepository
+                                    .setFloatingQueueMode(FloatingQueueMode.RECORD_ONLY)
+                                FloatingAssistantBus.setQueueMode(
+                                    FloatingQueueMode.RECORD_ONLY,
+                                )
+                            }
+                        },
+                    )
+                }
+                Text(
+                    text = when (current.floatingQueueMode) {
+                        FloatingQueueMode.PARSE_AND_DOWNLOAD ->
+                            "自动分享并解析，按下载默认值保存；作品加入连播队列。"
+
+                        FloatingQueueMode.PARSE_ONLY ->
+                            "自动分享并解析，只写入解析记录和链接记录，不自动下载。"
+
+                        FloatingQueueMode.RECORD_ONLY ->
+                            "自动分享后只把原始链接写入资料库的分享记录，不解析、不下载；" +
+                                "可在资料库中批量处理未完成记录。"
                     },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 FloatingSliderRow(
@@ -528,7 +703,8 @@ fun FloatingBallSettings() {
                     },
                     value = current.floatingQueueIntervalSeconds.toFloat(),
                     valueRange = 0f..60f,
-                    enabled = settings?.floatingMode == FloatingMode.AUTO,
+                    enabled = settings?.floatingMode == FloatingMode.AUTO &&
+                        current.floatingQueueMode != FloatingQueueMode.RECORD_ONLY,
                     onValueChange = { value ->
                         scope.launch {
                             context.appContainer.settingsRepository
@@ -552,7 +728,7 @@ fun FloatingBallSettings() {
                     title = "无障碍服务",
                     granted = permissions.accessibility,
                     action = "去开启",
-                    subtitle = "连播模式和浮球状态点需要；仅本机识别前台并点击分享按钮，不上传页面内容",
+                    subtitle = "连播模式和浮球状态点需要；未开启时长按浮球可直接打开此页",
                     onClick = { FloatingPermissions.openAccessibilitySettings(context) },
                 )
                 PermissionRow(
@@ -615,6 +791,25 @@ private fun readFloatingPermissions(context: android.content.Context): FloatingP
         notifications = NotificationManagerCompat.from(context).areNotificationsEnabled(),
         batteryOptimized = FloatingPermissions.isIgnoringBatteryOptimizations(context),
     )
+
+@Composable
+private fun QueueModeChip(
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+            )
+        },
+    )
+}
 
 @Composable
 private fun FloatingSliderRow(

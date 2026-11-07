@@ -66,22 +66,24 @@ DownloadRequest (Aweme + kind + gear + options)
 - 历史数据量较大时，列表查询避免读取完整快照：`HomeScreen` 只查询最近 6 条；`DownloadsScreen` 的标签/收藏使用 `AwemeMeta` 投影（`awemeId/tags/isFavorite/...`，不含 `snapshotJson`）；`LibraryScreen` 列表也只加载元数据，打开作品时才按 `awemeId` 解码完整快照。浮球重复检查同样只查询当前作品的下载记录。
 - `DownloadFeed` 在排序后按日期/首字符/大小区间/文件数区间生成分组标题，同时应用搜索（标题/作者/标签/合集/ID/BGM）和日期筛选；`LibraryFeed` 使用同样思路，最近排序优先使用最近下载时间，未下载记录回退解析时间。
 - 列表性能：历史快照和下载任务在 `Dispatchers.Default` 解码；`LazyColumn`/`LazyVerticalGrid` 使用稳定 key 与 contentType；滚动期间新出现卡片的封面延迟到停止滚动后加载；封面固定请求尺寸，视频封面优先远程、失败回退本地帧。
-- 作品预览：`WorkPreviewDialog` 使用 `VerticalPager`（`beyondViewportPageCount = 1`）按下载页当前 feed 顺序切换作品；每页独立持有选中文件、图片分页、详情面板和播放状态。预组合播放器创建时 `playWhenReady = false`，非当前页保持暂停且不请求音频焦点；当前页在 `pause = false` 时主动 `play()`，因此首次打开和切换作品后都会自动播放，图文 BGM 也会自动循环。顶部关闭/详情/分享/打开以及底部作者信息都在页内，随作品切换自动更新。`detailsOpen` 时禁用纵向 pager，返回键先关闭详情。视频/直播照片/BGM 均使用单作品循环，不自动跳到下一个。
+- 作品预览：`WorkPreviewDialog` 使用 `VerticalPager`（`beyondViewportPageCount = 1`）按下载页当前 feed 顺序切换作品；顶部退出/标题/信息/分享/打开和文件数信息改为 pager 之外的固定层，当前页通过 `PreviewTopState` 把显示文件、图片页码和 LivePhoto 状态回传给固定层，副标题用 `Crossfade` 更新；顶部整体透明度来自设置（默认 86%），暂停按钮降低透明度；拖动进度条使用白色高亮线条。每页独立持有选中文件、图片分页、详情面板和播放状态。预组合播放器创建时 `playWhenReady = false`，非当前页保持暂停且不请求音频焦点；当前页在 `pause = false` 时主动 `play()`，因此首次打开和切换作品后都会自动播放，图文 BGM 也会自动循环。顶部关闭/详情/分享/打开以及底部作者信息都在页内，随作品切换自动更新。`detailsOpen` 时禁用纵向 pager，返回键先关闭详情。视频/直播照片/BGM 均使用单作品循环，不自动跳到下一个。
 - 预览状态：`DownloadsScreen` 把打开请求保存在独立的 `PreviewOverlay` 中，只有该层读取 `previewRequest`；关闭预览时不会让整个下载列表、合集芯片和卡片 feed 一起重组，从而降低返回下载页的掉帧。`detailsOpen` 由预览层管理，底层页面保持原状态。
 - 滚动进度由独立的 `ScrollProgressOverlay` 读取列表状态，避免滚动帧触发整个页面重组。发布构建启用 R8 + 资源压缩，并使用与历史安装包相同的 debug 签名以便个人覆盖升级。
 
 ## 数据
 
-Room（版本 3）：
+Room（版本 4）：
 - `awemes`：作品快照 JSON、标题/作者/封面、收藏、标签（逗号分隔）、解析时间
 - `download_history`：任务状态、请求 JSON、文件/zip URI、重试所需信息
 - `download_collections`：合集 ID、名称、创建时间、排序序号
 - `download_collection_members`：`awemeId` 主键、合集 ID、加入时间；一个作品最多属于一个合集
-- 2→3 迁移只新增两张表，不重建或清空已有表；`AppDatabase` 仍保留 destructive fallback 供更旧版本使用
+- `share_link_records`：连播捕获的原始分享链接（主键 URL）、作品 ID/标题、状态（RECORDED/PROCESSING/COMPLETED/FAILED）、错误信息、首次/最近获取时间、获取次数、完成时间
+- 2→3 迁移只新增两张合集表；3→4 迁移只新增 `share_link_records` 和 status/lastCapturedAt 索引，不重建或清空已有表；`AppDatabase` 仍保留 destructive fallback 供更旧版本使用
 
 DataStore：
 - 默认清晰度（0 = 最高清晰度）、优先 H.264、LivePhoto/BGM/ZIP 默认项、剪贴板识别、下载页网格/列表、下载页排序模式、主题/动态色、历史保留天数、免责声明状态
-- 浮球：启用状态、轻享/连播模式、连播自动下载开关、解析队列间隔（0–60 秒，默认 5 秒）、点击浮球是否自动展开浮窗、按钮距离/角度、浮窗样式与最小尺寸、休眠时长
+- 浮球：启用状态、轻享/连播模式、连播处理方式（解析并下载/解析不下载/仅记录链接）、是否隐藏浮窗、解析队列间隔（0–60 秒，默认 5 秒）、点击浮球是否自动展开浮窗、按钮距离/角度、浮窗样式与最小尺寸、浮窗上下左右内边距和拖动条上边距、浮球/浮窗位置分数、浮窗宽高、休眠时长
+- 预览：作品预览顶部整体透明度（50%–100%，默认 86%）
 
 下载请求扩展字段：
 - `imageIndexes`：非空时只下载指定的图片列表索引，用于部分图片下载；
@@ -104,6 +106,8 @@ DataStore：
 | `MediaStoreSaver` | MediaStore/公共目录保存 |
 | `DownloadService` | 前台服务、通知、取消、持久化状态 |
 | `HistoryRepository` / `DownloadHistoryRepository` | 本地历史 |
+| `ShareLinkRepository` / `ShareLinkDao` | 连播分享链接记录、状态更新、未完成统计与中断恢复 |
+| `ShareLinkRecordsDialog` | 资料库链接记录：状态筛选、未完成选择、前台/后台批量处理 |
 | `SettingsRepository` | DataStore 设置 |
 | `DownloadGroups` / `DownloadGroup` | 下载任务按 aweme_id 聚合、作品封面、媒体元数据与组级进度 |
 | `DownloadSorting` | 六种排序模式、合集/未分类筛选 |
@@ -144,18 +148,9 @@ DataStore：
   操作按钮是独立的小窗口，全部为 42dp 图标；点击浮球后从浮球弹出并跟随拖动。信息浮窗先于浮球加入
   WindowManager，保持浮球和操作按钮在面板之上，但面板背景不再请求系统模糊。浮窗自身不再包含“×”，
   显示浮窗时关闭按钮作为操作环成员从浮球上方弹出。
-- `FloatingActionLayout` 负责操作环的纯几何布局：默认角度为分析 -90°、输入 180°、打开 0°、
-  停止 40°、结果 90°；出现停止时打开按钮移到 -14°、结果移到 94°，出现关闭按钮时关闭位于 -144°、
-  输入移到 162°，任意两个按钮保持至少 54° 间隔。`FloatingOverlayController` 只负责把角度加上
-  用户整体旋转（-180°–180°）并换算成窗口坐标；角度变化用 180ms `ValueAnimator` 平滑移动，
-  拖动浮球或浮球自身回移动画时位置即时跟随。
-- `FloatingOverlayController` 的窗口位移由 `ValueAnimator` 驱动：边缘点击回移 220ms、休眠移动 320ms、
-  唤醒 260ms；按钮位置按浮球大小、可调距离和整体角度计算。空闲休眠由 `postDelayed` 检查，
-  不进行周期性 tick；操作环/输入框/浮窗/任务打开时取消。`state.tapShowsPanel` 控制点击浮球时
-  是否自动展开浮窗；关闭后只弹操作环，任务状态仍可通过 `expanded` 自动显示浮窗。
 - `FrostedPanelDrawable`：面板背景由半透明底色、内部柔光、噪点磨砂和白色边缘在自身 bounds 内绘制；
-  支持毛玻璃/半透明/完全透明/纯色。不使用 `FLAG_BLUR_BEHIND`，因为部分 OEM 会把它扩展到整屏。
-  面板默认 280×112dp，最小 150×64dp，最小宽高由设置控制。
+  支持毛玻璃/半透明/完全透明/纯色。不使用 `FLAG_BLUR_BEHIND`，因为部分 OEM 会把它扩展到整屏模糊。
+  面板默认 280×112dp，最小 150×64dp；内边距与拖动条上边距由设置控制。
 - `DouyinAccessibilityService`：用户手动开启的无障碍服务；只读取抖音/抖音极速版窗口，维护前台状态，
   在连播模式中点击“分享 → 分享链接”。不处理验证码，不导出页面内容。前台判定以活动窗口包名为准，
   内容变化事件做 800ms 节流，避免后台窗口的残留事件把桌面误判成抖音。
@@ -163,12 +158,27 @@ DataStore：
   读取剪贴板后立即移除，把焦点还给抖音。
 - 浮球状态点只表示前台应用（抖音/极速版绿色，其他灰色；无障碍未开启时空心灰环）；
   模式用图标底部“轻/连”徽标表示；浮球外圈 `OrbProgressRing` 显示解析扫描或下载进度。
-  连播队列繁忙时仍保留“分析当前视频”，不再显示“下一个”；点击会继续自动分享并 enqueue。
+  停止 40°、结果 90°；出现停止时打开按钮移到 -14°、结果移到 94°，出现关闭按钮时关闭位于 -144°、
+  输入移到 162°，任意两个按钮保持至少 54° 间隔。`FloatingOverlayController` 只负责把角度加上
+  用户整体旋转（-180°–180°）并换算成窗口坐标；角度变化用 180ms `ValueAnimator` 平滑移动，
+  拖动浮球或浮球自身回移动画时位置即时跟随。
+- `FloatingOverlayController` 的窗口位移由 `ValueAnimator` 驱动：边缘点击回移 220ms、休眠移动 320ms、
+  唤醒 260ms；按钮位置按浮球大小、可调距离和整体角度计算。空闲休眠由 `postDelayed` 检查，
+  不进行周期性 tick；操作环/输入框/浮窗/任务打开时取消。`state.tapShowsPanel` 控制点击浮球时
+  是否自动展开浮窗；`state.hidePanel` 打开后解析/下载/连播都不自动弹出浮窗。拖动结束把浮球和
+  浮窗的位置（屏幕比例）与浮窗宽高写入 DataStore，下次服务启动在创建窗口前恢复。
+  浮窗可拖到 0 到屏幕边缘；上下左右内边距和拖动条上边距来自设置，文字布局不再是 ScrollView，
+  超出浮窗高度的内容直接裁剪。
 - `FloatingParseQueue`：复用 `DouyinWebViewEngine` + `ParseController`，WebView 挂在 1×1 隐藏窗口；
-  一次只解析一个作品，解析后按默认值自动下载并等待 `DownloadRegistry` 终止，再按设置的队列间隔等待后
-  处理下一项。`ParseController.readPageState` 有 3 秒超时；连续 2 次超时/页面无响应时，队列会销毁并
-  重建隐藏 WebView，避免复用已卡死的解析环境。重复下载检查只查询当前 `awemeId` 的下载记录。
+  一次只解析一个作品。`FloatingQueueMode.PARSE_AND_DOWNLOAD` 解析后按默认值自动下载；
+  `PARSE_ONLY` 只保存解析/链接记录；`RECORD_ONLY` 由服务直接写入链接记录，不创建解析队列。
+  解析/下载结束后按设置的队列间隔等待再处理下一项。`ParseController.readPageState` 有 3 秒超时；
+  连续 2 次超时/页面无响应时，队列会销毁并重建隐藏 WebView。重复下载检查只查询当前 `awemeId`
+  的下载记录。队列处理成功/失败会同步 `ShareLinkRepository` 状态。
 - 安全验证/登录：验证状态把同一个 WebView 扩展为全屏页面；登录只提示手动打开。
+- 未开启无障碍时长按浮球直接调用 `FloatingPermissions.openAccessibilitySettings`；已开启时只显示提示。
+- 分享自动化点击“分享链接”后会等待并关闭抖音底部的“链接已复制成功，去粘贴分享”卡片；读取剪贴板时
+  校验时间戳，避免未复制成功时复用上一个作品的旧链接。
 - `FloatingAssistantJobService` + `FloatingAssistantScheduler`：15 分钟 persisted JobScheduler 看护；
   `BootCompletedReceiver` 在开机/更新后重新注册；OEM 可能仍阻止后台启动，设置提供电池优化入口。
 - `MainActivity` 启动/恢复时检查 `floatingBallEnabled` 并恢复服务；应用更新后部分系统会关闭无障碍，
@@ -177,6 +187,9 @@ DataStore：
   `HistoryBackup`（ZIP + `manifest.json` + `awemes.jsonl` + `downloads.jsonl`，流式导出/分批导入，
   带进度和错误/跳过统计）。记录包含作品信息和本地文件 URI/路径，不包含媒体文件本身。
 
-浮球的自动下载使用 `buildFloatingDownloadRequest`：视频按默认清晰度/优先 H.264，图文按
-LivePhoto/BGM/ZIP 默认开关，不自动下载封面；入队前复用 `DownloadDuplicates`，重复内容自动跳过。
-队列只在进程内保存，服务被杀后丢失。详见 [FLOATING_ASSISTANT.md](FLOATING_ASSISTANT.md)。
+连播模式下三种处理方式都先把链接写入 `share_link_records`：`PARSE_AND_DOWNLOAD` 解析后使用
+`buildFloatingDownloadRequest` 自动下载（视频按默认清晰度/优先 H.264，图文按 LivePhoto/BGM/ZIP
+默认开关，不自动下载封面，入队前复用 `DownloadDuplicates`）；`PARSE_ONLY` 只解析并写入记录；
+`RECORD_ONLY` 不创建解析队列，用户可在资料库链接记录中勾选并批量处理。资料库批量处理支持前台
+`ParseActivity`（单次最多 20 条）或通过 Kit 浮球隐藏队列后台处理。队列只在进程内保存，服务被杀后
+丢失；链接记录保存在 Room，服务重启后仍可查看。详见 [FLOATING_ASSISTANT.md](FLOATING_ASSISTANT.md)。

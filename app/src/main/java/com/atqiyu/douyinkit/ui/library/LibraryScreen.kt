@@ -1,5 +1,7 @@
 package com.atqiyu.douyinkit.ui.library
 
+import android.app.Activity
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Search
@@ -33,6 +36,8 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -76,6 +81,8 @@ import com.atqiyu.douyinkit.core.model.Author
 import com.atqiyu.douyinkit.data.db.AwemeEntity
 import com.atqiyu.douyinkit.data.db.AwemeMeta
 import com.atqiyu.douyinkit.di.appContainer
+import com.atqiyu.douyinkit.floating.FloatingAssistantService
+import com.atqiyu.douyinkit.parser.ParseActivity
 import com.atqiyu.douyinkit.ui.components.FadeInAsyncImage
 import com.atqiyu.douyinkit.ui.components.FeedSectionHeader
 import com.atqiyu.douyinkit.ui.components.ScrollProgressOverlay
@@ -88,6 +95,7 @@ import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -98,6 +106,10 @@ fun LibraryScreen(
     val context = LocalContext.current
     val repository = context.appContainer.historyRepository
     val downloadHistoryRepository = context.appContainer.downloadHistoryRepository
+    val shareLinkRepository = context.appContainer.shareLinkRepository
+    val settingsRepository = context.appContainer.settingsRepository
+    val pendingLinkCount by shareLinkRepository.observePendingCount()
+        .collectAsStateWithLifecycle(initialValue = 0)
     val scope = rememberCoroutineScope()
     // List rows only need display metadata. Full snapshots are decoded when a work is opened,
     // so 800+ records no longer inflate the heap while the queue is saving new works.
@@ -115,6 +127,7 @@ fun LibraryScreen(
     var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showBulkDeleteDialog by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
+    var showLinkRecords by remember { mutableStateOf(false) }
     val filter = LibraryFilter.entries[filterIndex]
     val sortMode = LibrarySortMode.entries[sortIndex]
 
@@ -285,6 +298,21 @@ fun LibraryScreen(
                                     Text("取消")
                                 }
                             } else {
+                                IconButton(onClick = { showLinkRecords = true }) {
+                                    BadgedBox(
+                                        badge = {
+                                            if (pendingLinkCount > 0) {
+                                                Badge { Text(pendingLinkCount.toString()) }
+                                            }
+                                        },
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Link,
+                                            contentDescription = "抖音作品链接分享记录",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
                                 IconButton(onClick = { searchOpen = true }) {
                                     Icon(
                                         imageVector = Icons.Default.Search,
@@ -581,6 +609,65 @@ fun LibraryScreen(
             dismissButton = {
                 TextButton(onClick = { showBulkDeleteDialog = false }) {
                     Text("取消")
+                }
+            },
+        )
+    }
+
+    if (showLinkRecords) {
+        ShareLinkRecordsDialog(
+            onDismiss = { showLinkRecords = false },
+            onProcess = { links, background ->
+                showLinkRecords = false
+                if (background) {
+                    scope.launch {
+                        val enabled = runCatching {
+                            settingsRepository.settings.first().floatingBallEnabled
+                        }.getOrDefault(false)
+                        if (!enabled) {
+                            Toast.makeText(
+                                context,
+                                "请先在设置中开启 Kit 浮球，再使用后台批量处理",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                            return@launch
+                        }
+                        runCatching {
+                            FloatingAssistantService.start(context)
+                            FloatingAssistantService.enqueueBatch(context, links)
+                        }.onFailure {
+                            Toast.makeText(
+                                context,
+                                "无法启动后台队列：${it.message ?: "系统限制"}",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    }
+                } else {
+                    val launched = links.take(20)
+                    if (links.size > launched.size) {
+                        Toast.makeText(
+                            context,
+                            "前台单次最多 20 条，已先处理前 ${launched.size} 条",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            launched.forEach { url ->
+                                runCatching { shareLinkRepository.markProcessing(url) }
+                            }
+                        }
+                        val intent = ParseActivity.intent(context, launched)
+                        val activity = context as? Activity
+                        if (activity != null) {
+                            activity.startActivity(intent)
+                        } else {
+                            context.startActivity(
+                                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    }
                 }
             },
         )

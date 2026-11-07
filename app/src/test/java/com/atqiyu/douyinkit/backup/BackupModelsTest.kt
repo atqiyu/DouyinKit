@@ -5,6 +5,7 @@ import com.atqiyu.douyinkit.data.prefs.DownloadSortMode
 import com.atqiyu.douyinkit.data.prefs.FloatingMode
 import com.atqiyu.douyinkit.data.prefs.FloatingPanelColor
 import com.atqiyu.douyinkit.data.prefs.FloatingPanelStyle
+import com.atqiyu.douyinkit.data.prefs.FloatingQueueMode
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -33,7 +34,8 @@ class BackupModelsTest {
             onboardingAccepted = true,
             floatingBallEnabled = true,
             floatingMode = FloatingMode.AUTO,
-            floatingAutoDownload = false,
+            floatingQueueMode = FloatingQueueMode.RECORD_ONLY,
+            floatingHidePanel = true,
             floatingOrbSizeDp = 60,
             floatingOrbAlpha = 0.66f,
             floatingPanelOpacity = 0.42f,
@@ -48,6 +50,18 @@ class BackupModelsTest {
             floatingPanelMinHeightDp = 80,
             floatingIdleTimeoutSeconds = 60,
             floatingQueueIntervalSeconds = 23,
+            floatingPanelPaddingLeftDp = 2,
+            floatingPanelPaddingTopDp = 0,
+            floatingPanelPaddingRightDp = 11,
+            floatingPanelPaddingBottomDp = 5,
+            floatingPanelDragHandleTopDp = 0,
+            floatingOrbXFraction = 0.2f,
+            floatingOrbYFraction = 0.8f,
+            floatingPanelXFraction = 0.1f,
+            floatingPanelYFraction = 0.4f,
+            floatingPanelWidthDp = 300,
+            floatingPanelHeightDp = 140,
+            previewOverlayOpacity = 0.72f,
         )
         val encoded = json.encodeToString(
             ConfigFile.serializer(),
@@ -72,6 +86,32 @@ class BackupModelsTest {
         assertTrue(settings.floatingTapShowsPanel)
         assertEquals(0, settings.floatingActionAngleOffset)
         assertEquals(5, settings.floatingQueueIntervalSeconds)
+        assertEquals(FloatingQueueMode.PARSE_AND_DOWNLOAD, settings.floatingQueueMode)
+        assertEquals(false, settings.floatingHidePanel)
+        assertEquals(8, settings.floatingPanelPaddingLeftDp)
+        assertEquals(4, settings.floatingPanelPaddingTopDp)
+        assertEquals(2, settings.floatingPanelDragHandleTopDp)
+        assertEquals(0.86f, settings.previewOverlayOpacity)
+    }
+
+    @Test
+    fun legacyAutoDownloadBooleanMapsToQueueMode() {
+        val disabled = json.decodeFromString(
+            ConfigFile.serializer(),
+            """{"schemaVersion":1,"settings":{"floatingAutoDownload":false}}""",
+        )
+        assertEquals(
+            FloatingQueueMode.PARSE_ONLY,
+            disabled.settings.toSettings().floatingQueueMode,
+        )
+        val enabled = json.decodeFromString(
+            ConfigFile.serializer(),
+            """{"schemaVersion":1,"settings":{"floatingAutoDownload":true}}""",
+        )
+        assertEquals(
+            FloatingQueueMode.PARSE_AND_DOWNLOAD,
+            enabled.settings.toSettings().floatingQueueMode,
+        )
     }
 
     @Test

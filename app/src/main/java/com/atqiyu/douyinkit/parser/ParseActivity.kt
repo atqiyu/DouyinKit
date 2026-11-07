@@ -23,6 +23,9 @@ import com.atqiyu.douyinkit.data.prefs.ThemeMode
 import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.ui.parse.ParseScreen
 import com.atqiyu.douyinkit.ui.theme.DouyinKitTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -32,9 +35,12 @@ class ParseActivity : ComponentActivity() {
     private lateinit var engine: DouyinWebViewEngine
     private lateinit var controller: ParseController
     private var inputs: List<String> = emptyList()
+    private var parseInputs: List<String> = emptyList()
     private var forceRefresh: Boolean = false
     private var openResultInApp: Boolean = false
     private var published = false
+    private val handledOutcomes = mutableSetOf<String>()
+    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,6 +50,7 @@ class ParseActivity : ComponentActivity() {
         )
 
         inputs = intent.getStringArrayListExtra(EXTRA_INPUTS).orEmpty()
+        parseInputs = expandInputs(inputs)
         forceRefresh = intent.getBooleanExtra(EXTRA_FORCE_REFRESH, false)
         openResultInApp = intent.getBooleanExtra(EXTRA_OPEN_RESULT_IN_APP, false)
 
@@ -99,13 +106,44 @@ class ParseActivity : ComponentActivity() {
             }
         }
 
+        lifecycleScope.launch(Dispatchers.IO) {
+            parseInputs.forEach { input ->
+                runCatching {
+                    applicationContext.appContainer.shareLinkRepository.markProcessing(input)
+                }
+            }
+        }
+
         lifecycleScope.launch {
             delay(250)
-            controller.start(expandInputs(inputs), forceRefresh)
+            controller.start(parseInputs, forceRefresh)
         }
 
         lifecycleScope.launch {
             controller.state.collect { state ->
+                val newOutcomes = state.outcomes.filter { it.input !in handledOutcomes }
+                if (newOutcomes.isNotEmpty()) {
+                    handledOutcomes += newOutcomes.map { it.input }
+                    launch(Dispatchers.IO) {
+                        newOutcomes.forEach { outcome ->
+                            runCatching {
+                                if (outcome.success) {
+                                    applicationContext.appContainer.shareLinkRepository.markCompleted(
+                                        url = outcome.input,
+                                        awemeId = outcome.awemeId,
+                                        title = outcome.title,
+                                        message = "解析完成",
+                                    )
+                                } else {
+                                    applicationContext.appContainer.shareLinkRepository.markFailed(
+                                        outcome.input,
+                                        outcome.message,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
                 val finishedSuccessfully = !state.running &&
                     state.stage == ParseStage.DONE &&
                     state.results.isNotEmpty()
@@ -148,6 +186,19 @@ class ParseActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        val remaining = parseInputs.filter { it !in handledOutcomes }
+        if (remaining.isNotEmpty()) {
+            cleanupScope.launch {
+                remaining.forEach { input ->
+                    runCatching {
+                        applicationContext.appContainer.shareLinkRepository.markFailed(
+                            input,
+                            "已取消或未完成",
+                        )
+                    }
+                }
+            }
+        }
         controller.destroy()
         super.onDestroy()
     }

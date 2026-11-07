@@ -29,12 +29,15 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -219,6 +222,19 @@ fun SettingsScreen() {
                     enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
                     onCheckedChange = { enabled ->
                         scope.launch { container.settingsRepository.setDynamicColor(enabled) }
+                    },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SettingSlider(
+                    title = "作品预览顶部透明度",
+                    subtitle = "退出、标题、信息、分享和打开按钮的不透明度；默认 86%",
+                    value = settings.previewOverlayOpacity,
+                    valueRange = 0.5f..1f,
+                    valueText = "${(settings.previewOverlayOpacity * 100).toInt()}%",
+                    onValueChange = { value ->
+                        scope.launch {
+                            container.settingsRepository.setPreviewOverlayOpacity(value)
+                        }
                     },
                 )
             }
@@ -530,6 +546,49 @@ private fun SettingSwitch(
             checked = checked,
             onCheckedChange = onCheckedChange,
             enabled = enabled,
+        )
+    }
+}
+
+@Composable
+private fun SettingSlider(
+    title: String,
+    subtitle: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    valueText: String,
+    onValueChange: (Float) -> Unit,
+) {
+    var localValue by remember { mutableFloatStateOf(value) }
+    var dragging by remember { mutableStateOf(false) }
+    LaunchedEffect(value) {
+        if (!dragging) localValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
+    }
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = title, style = MaterialTheme.typography.labelLarge)
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = valueText,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Slider(
+            value = localValue.coerceIn(valueRange.start, valueRange.endInclusive),
+            onValueChange = { next ->
+                dragging = true
+                localValue = next
+                onValueChange(next)
+            },
+            onValueChangeFinished = { dragging = false },
+            valueRange = valueRange,
         )
     }
 }

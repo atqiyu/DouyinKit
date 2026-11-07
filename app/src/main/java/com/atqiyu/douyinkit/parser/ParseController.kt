@@ -80,6 +80,7 @@ class ParseController(
         parseJob = scope.launch {
             val results = mutableListOf<Aweme>()
             val failures = mutableListOf<ParseFailure>()
+            val outcomes = mutableListOf<ParseItemResult>()
             try {
                 cleaned.forEachIndexed { index, input ->
                     currentItemStartedAt = System.currentTimeMillis()
@@ -96,9 +97,17 @@ class ParseController(
                     try {
                         val aweme = parseOne(input, forceRefresh)
                         results += aweme
+                        outcomes += ParseItemResult(
+                            input = input,
+                            awemeId = aweme.awemeId,
+                            title = aweme.displayTitle,
+                            success = true,
+                            message = "解析完成",
+                        )
                         _state.update {
                             it.copy(
                                 results = results.toList(),
+                                outcomes = outcomes.toList(),
                                 showWebView = false,
                                 needsVerification = false,
                                 message = "已解析：${aweme.displayTitle}",
@@ -109,9 +118,15 @@ class ParseController(
                     } catch (error: Exception) {
                         val failure = toFailure(input, error)
                         failures += failure
+                        outcomes += ParseItemResult(
+                            input = input,
+                            success = false,
+                            message = failure.message,
+                        )
                         _state.update {
                             it.copy(
                                 failures = failures.toList(),
+                                outcomes = outcomes.toList(),
                                 showWebView = false,
                                 needsVerification = false,
                                 message = failure.message,

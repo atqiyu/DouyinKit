@@ -3,9 +3,9 @@
 已发布版本：
 
 - 仓库：<https://github.com/atqiyu/DouyinKit>
-- 最新 Release：<https://github.com/atqiyu/DouyinKit/releases/tag/v1.5.7>
-- 最新 APK：`DouyinKit-v1.5.7.apk`（versionCode 13，3,457,791 字节，R8 优化构建）
-- 最新资产 SHA-256：`26834b5158efa7d0abf3564e3a7a1df0808cafb0b23c9a5aa464e441b577592f`
+- 最新 Release：<https://github.com/atqiyu/DouyinKit/releases/tag/v1.6.0>
+- 最新 APK：`DouyinKit-v1.6.0.apk`（versionCode 14，3,474,175 字节，R8 优化构建）
+- 最新资产 SHA-256：`710900198d665e877da36121619005bc37b0e96400d7d6b7d0875ceaee3037e7`
 - 首个 Release：<https://github.com/atqiyu/DouyinKit/releases/tag/v1.2.0>
 - 可见性：Public；默认分支：`main`；许可证：MIT
 - 已设置仓库描述和 9 个 Topics
@@ -13,9 +13,9 @@
 ## 当前本地状态
 
 - 分支：`main`
-- 当前版本：`v1.5.7`
-- Release 说明：[RELEASE_NOTES_v1.5.7.md](../RELEASE_NOTES_v1.5.7.md)
-- APK 产物：`dist/DouyinKit-v1.5.7.apk`（已在 `.gitignore` 中忽略，不会提交进源码）
+- 当前版本：`v1.6.0`
+- Release 说明：[RELEASE_NOTES_v1.6.0.md](../RELEASE_NOTES_v1.6.0.md)
+- APK 产物：`dist/DouyinKit-v1.6.0.apk`（已在 `.gitignore` 中忽略，不会提交进源码）
 - 签名：release 构建使用标准 debug keystore，便于从 1.3.0 覆盖升级；公开分发前应换成私有 release keystore
 - 许可证：[MIT](../LICENSE)
 
@@ -49,16 +49,16 @@ git push origin main
 
 # 3. 复制 APK 到 dist，计算校验和
 mkdir -p dist
-cp app/build/outputs/apk/release/app-release.apk dist/DouyinKit-v1.5.7.apk
-sha256sum dist/DouyinKit-v1.5.7.apk
-# 把大小和 SHA-256 写入 RELEASE_NOTES_v1.5.7.md
+cp app/build/outputs/apk/release/app-release.apk dist/DouyinKit-v1.6.0.apk
+sha256sum dist/DouyinKit-v1.6.0.apk
+# 把大小和 SHA-256 写入 RELEASE_NOTES_v1.6.0.md
 
 # 4. 打标签、推送并发布 Release
-git tag v1.5.7
-git push origin v1.5.7
-gh release create v1.5.7 "dist/DouyinKit-v1.5.7.apk" \
-  --title "DouyinKit v1.5.7" \
-  --notes-file RELEASE_NOTES_v1.5.7.md
+git tag v1.6.0
+git push origin v1.6.0
+gh release create v1.6.0 "dist/DouyinKit-v1.6.0.apk" \
+  --title "DouyinKit v1.6.0" \
+  --notes-file RELEASE_NOTES_v1.6.0.md
 ```
 
 ### 替换已发布版本（修复版）
@@ -97,14 +97,14 @@ gh repo edit atqiyu/DouyinKit \
 ```bash
 git remote add origin https://github.com/atqiyu/DouyinKit.git
 git push -u origin main
-git push origin v1.5.7
+git push origin v1.6.0
 ```
 
 首次 push 如果自动弹出 Git Credential Manager，登录并授权即可。
 
-5. 进入仓库 **Releases → Draft a new release**，选择标签 `v1.5.7`。
-6. 标题填 `DouyinKit v1.5.7`，描述粘贴 `RELEASE_NOTES_v1.5.7.md` 的内容。
-7. 上传 `dist/DouyinKit-v1.5.7.apk`，点击 Publish release。
+5. 进入仓库 **Releases → Draft a new release**，选择标签 `v1.6.0`。
+6. 标题填 `DouyinKit v1.6.0`，描述粘贴 `RELEASE_NOTES_v1.6.0.md` 的内容。
+7. 上传 `dist/DouyinKit-v1.6.0.apk`，点击 Publish release。
 
 ## 发布包说明
 
@@ -119,6 +119,6 @@ git push origin v1.5.7
 
 - 仓库 About 区域显示描述、Topics 和 MIT License
 - `main` 上有完整提交历史
-- `v1.5.7` 标签存在，且指向包含发布说明的提交
-- Releases 页面有 v1.5.7 和 APK 资产，资产大小/SHA-256 与发布说明一致
+- `v1.6.0` 标签存在，且指向包含发布说明的提交
+- Releases 页面有 v1.6.0 和 APK 资产，资产大小/SHA-256 与发布说明一致
 - App 的“设置 → 关于”中的版本、GitHub 仓库与许可证链接可打开

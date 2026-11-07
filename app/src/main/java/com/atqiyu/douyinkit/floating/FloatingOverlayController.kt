@@ -16,10 +16,13 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.text.InputType
 import android.util.Log
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -31,7 +34,6 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.widget.doAfterTextChanged
 import com.atqiyu.douyinkit.R
@@ -53,6 +55,10 @@ class FloatingOverlayController(
     private val onStop: () -> Unit,
     private val onInputSubmit: (String) -> Unit,
     private val onInputCancel: () -> Unit,
+    private val onOrbPositionChanged: (Float, Float) -> Unit = { _, _ -> },
+    private val onPanelGeometryChanged: (Float, Float, Int, Int) -> Unit =
+        { _, _, _, _ -> },
+    private val onOrbLongPress: () -> Unit = {},
 ) {
     private val windowManager =
         context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -134,6 +140,18 @@ class FloatingOverlayController(
     private var panelPositioned = false
     private var panelWidthPx = dp(280)
     private var panelHeightPx = dp(112)
+    private var panelGeometryRestored = false
+    private var orbGeometryRestored = false
+    private var lastPanelPaddingKey: String? = null
+    private var longPressFired = false
+    private val longPressHandler = Handler(Looper.getMainLooper())
+    private val longPressRunnable = Runnable {
+        if (!draggingOrb && !sleeping && orbAttached) {
+            longPressFired = true
+            orbCircle.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            onOrbLongPress()
+        }
+    }
 
     private val actionWindows = mutableMapOf<FloatingActionKind, ActionWindow>()
     private var actionsVisible = false
@@ -150,10 +168,13 @@ class FloatingOverlayController(
         bindPanelGestures()
     }
 
+    fun isOrbShown(): Boolean = orbAttached
+
     fun showOrb(): Boolean {
         if (orbAttached) return true
         return runCatching {
             applyOrbSize(orbSize())
+            restoreOrbGeometry()
             ensurePanelWindow()
             sleeping = false
             orbBaseAlpha = state.orbAlpha.coerceIn(0.35f, 1f)
@@ -178,6 +199,7 @@ class FloatingOverlayController(
         if (!orbAttached) return
         cancelSleepTimer()
         cancelOrbAnimator()
+        longPressHandler.removeCallbacks(longPressRunnable)
         sleeping = false
         hideActions()
         hidePanel(notify = false)
@@ -188,6 +210,7 @@ class FloatingOverlayController(
 
     fun render(newState: FloatingUiState) {
         state = newState
+        if (!newState.settingsLoaded) return
         if (!newState.enabled) {
             hideOrb()
             return
@@ -227,13 +250,16 @@ class FloatingOverlayController(
         if (!orbAttached || panelVisible) return
         ensurePanelWindow()
         if (!panelAttached) return
+        restorePanelGeometry()
         cancelSleepTimer()
         panelVisible = true
         panelRoot.animate().cancel()
         val minWidth = dp(state.panelMinWidthDp.coerceIn(150, 260))
         val minHeight = dp(state.panelMinHeightDp.coerceIn(64, 160))
         panelWidthPx = panelWidthPx.coerceAtLeast(minWidth)
+            .coerceAtMost(screenWidth.coerceAtLeast(minWidth))
         panelHeightPx = panelHeightPx.coerceAtLeast(minHeight)
+            .coerceAtMost(screenHeight.coerceAtLeast(minHeight))
         if (!panelPositioned) {
             val orbCenterX = orbParams.x + orbParams.width / 2
             panelParams.x = if (orbCenterX < screenWidth / 2) {
@@ -244,6 +270,14 @@ class FloatingOverlayController(
             panelParams.y = (screenHeight - navBar - panelHeightPx - dp(36))
                 .coerceAtLeast(statusBar + dp(8))
         }
+        panelParams.x = panelParams.x.coerceIn(
+            0,
+            (screenWidth - panelWidthPx).coerceAtLeast(0),
+        )
+        panelParams.y = panelParams.y.coerceIn(
+            0,
+            (screenHeight - panelHeightPx).coerceAtLeast(0),
+        )
         panelParams.width = panelWidthPx
         panelParams.height = panelHeightPx
         panelParams.flags = panelBaseFlags()
@@ -432,6 +466,7 @@ class FloatingOverlayController(
     fun dismiss() {
         cancelSleepTimer()
         cancelOrbAnimator()
+        longPressHandler.removeCallbacks(longPressRunnable)
         sleeping = false
         hideInput()
         hideActions()
@@ -520,8 +555,8 @@ class FloatingOverlayController(
 
     private fun buildPanel() {
         panelRoot.setBackgroundColor(Color.TRANSPARENT)
-        panelCard.setPadding(dp(9), dp(7), dp(9), dp(6))
-        val header = FrameLayout(context)
+        panelRoot.clipChildren = true
+        panelCard.clipChildren = true
         panelDragHandle.background = GradientDrawable().apply {
             cornerRadius = dp(2).toFloat()
             setColor(Color.argb(120, 255, 255, 255))
@@ -531,30 +566,14 @@ class FloatingOverlayController(
             panelDragHandle,
             FrameLayout.LayoutParams(dp(30), dp(3), Gravity.CENTER),
         )
-        header.addView(
-            panelDragArea,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                dp(26),
-                Gravity.CENTER_HORIZONTAL or Gravity.TOP,
-            ),
-        )
-        panelCard.addView(
-            header,
-            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(26)),
-        )
-        val scroll = ScrollView(context).apply {
-            isFillViewport = true
-            isVerticalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-        }
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(1), 0, dp(8))
+            clipChildren = true
         }
         panelMessage.setTextColor(Color.argb(235, 235, 240, 246))
         panelMessage.textSize = 10.5f
         panelMessage.maxLines = 3
+        panelMessage.ellipsize = android.text.TextUtils.TruncateAt.END
         panelMessage.setPadding(0, 0, 0, dp(2))
         panelMessage.setShadowLayer(3f, 0f, 1f, Color.argb(170, 0, 0, 0))
         column.addView(panelMessage)
@@ -574,26 +593,26 @@ class FloatingOverlayController(
         )
         panelQueue.setTextColor(Color.argb(185, 185, 193, 204))
         panelQueue.textSize = 9f
+        panelQueue.maxLines = 1
         panelQueue.visibility = View.GONE
         panelQueue.setShadowLayer(3f, 0f, 1f, Color.argb(160, 0, 0, 0))
         column.addView(panelQueue)
         panelLink.setTextColor(Color.argb(185, 143, 205, 212))
         panelLink.textSize = 9f
         panelLink.maxLines = 1
+        panelLink.ellipsize = android.text.TextUtils.TruncateAt.END
         panelLink.visibility = View.GONE
         panelLink.setPadding(0, dp(3), 0, 0)
         panelLink.setShadowLayer(3f, 0f, 1f, Color.argb(160, 0, 0, 0))
         column.addView(panelLink)
-        scroll.addView(column, FrameLayout.LayoutParams(-1, -2))
+        // No ScrollView: the panel is a compact status card. Anything that does not fit is
+        // clipped instead of being vertically scrollable.
         panelCard.addView(
-            scroll,
+            column,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
-            ).apply {
-                topMargin = dp(27)
-                bottomMargin = dp(3)
-            },
+            ),
         )
         panelResizeHandle.text = "◢"
         panelResizeHandle.setTextColor(Color.argb(150, 220, 228, 238))
@@ -612,6 +631,15 @@ class FloatingOverlayController(
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
+        panelRoot.addView(
+            panelDragArea,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                dp(22),
+                Gravity.TOP or Gravity.CENTER_HORIZONTAL,
+            ),
+        )
+        applyPanelPadding()
     }
 
     private fun bindOrbTouch() {
@@ -638,6 +666,8 @@ class FloatingOverlayController(
                     downOrbX = orbParams.x
                     downOrbY = orbParams.y
                     draggingOrb = false
+                    longPressFired = false
+                    longPressHandler.postDelayed(longPressRunnable, ORB_LONG_PRESS_MS)
                     true
                 }
 
@@ -647,6 +677,7 @@ class FloatingOverlayController(
                     if (!draggingOrb &&
                         (kotlin.math.abs(dx) > touchSlop || kotlin.math.abs(dy) > touchSlop)
                     ) {
+                        longPressHandler.removeCallbacks(longPressRunnable)
                         draggingOrb = true
                         if (sleeping) wakeFromDrag()
                     }
@@ -671,14 +702,17 @@ class FloatingOverlayController(
                 }
 
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    longPressHandler.removeCallbacks(longPressRunnable)
                     if (!draggingOrb) {
-                        if (event.actionMasked == MotionEvent.ACTION_UP) {
+                        if (event.actionMasked == MotionEvent.ACTION_UP && !longPressFired) {
                             orbCircle.performClick()
                         }
                     } else {
+                        persistOrbGeometry()
                         markInteraction()
                     }
                     draggingOrb = false
+                    longPressFired = false
                     true
                 }
 
@@ -703,14 +737,20 @@ class FloatingOverlayController(
 
                 MotionEvent.ACTION_MOVE -> {
                     panelParams.x = (downOrbX + (event.rawX - downRawX).toInt()).coerceIn(
-                        dp(2),
-                        screenWidth - panelWidthPx - dp(2),
+                        0,
+                        (screenWidth - panelWidthPx).coerceAtLeast(0),
                     )
                     panelParams.y = (downOrbY + (event.rawY - downRawY).toInt()).coerceIn(
-                        statusBar + dp(2),
-                        screenHeight - navBar - panelHeightPx - dp(2),
+                        0,
+                        (screenHeight - panelHeightPx).coerceAtLeast(0),
                     )
                     runCatching { windowManager.updateViewLayout(panelRoot, panelParams) }
+                    true
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    persistPanelGeometry()
+                    markInteraction()
                     true
                 }
 
@@ -732,19 +772,29 @@ class FloatingOverlayController(
                     val minWidth = dp(state.panelMinWidthDp.coerceIn(150, 260))
                     val minHeight = dp(state.panelMinHeightDp.coerceIn(64, 160))
                     panelWidthPx = (downOrbX + (event.rawX - downRawX).toInt())
-                        .coerceIn(minWidth, screenWidth - dp(8))
+                        .coerceIn(minWidth, (screenWidth - dp(4)).coerceAtLeast(minWidth))
                     panelHeightPx = (downOrbY + (event.rawY - downRawY).toInt())
-                        .coerceIn(minHeight, (screenHeight * 0.55f).toInt())
+                        .coerceIn(
+                            minHeight,
+                            (screenHeight - dp(4)).coerceAtLeast(minHeight),
+                        )
                     panelParams.width = panelWidthPx
                     panelParams.height = panelHeightPx
-                    panelParams.x =
-                        panelParams.x.coerceAtMost(screenWidth - panelWidthPx - dp(2))
+                    panelParams.x = panelParams.x.coerceIn(
+                        0,
+                        (screenWidth - panelWidthPx).coerceAtLeast(0),
+                    )
                     panelParams.y = panelParams.y.coerceIn(
-                        statusBar + dp(2),
-                        (screenHeight - navBar - panelHeightPx - dp(2))
-                            .coerceAtLeast(statusBar + dp(2)),
+                        0,
+                        (screenHeight - panelHeightPx).coerceAtLeast(0),
                     )
                     runCatching { windowManager.updateViewLayout(panelRoot, panelParams) }
+                    true
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    persistPanelGeometry()
+                    markInteraction()
                     true
                 }
 
@@ -765,7 +815,9 @@ class FloatingOverlayController(
             }
             .start()
         renderActions()
-        if (actionsVisible && state.tapShowsPanel && !panelVisible && hasPanelInfo(state)) {
+        if (actionsVisible && state.tapShowsPanel && !state.hidePanel &&
+            !panelVisible && hasPanelInfo(state)
+        ) {
             showPanel(notify = true)
         }
         updateSleepTimer()
@@ -917,6 +969,7 @@ class FloatingOverlayController(
     }
 
     private fun renderPanel() {
+        applyPanelPadding()
         val minWidth = dp(state.panelMinWidthDp.coerceIn(150, 260))
         val minHeight = dp(state.panelMinHeightDp.coerceIn(64, 160))
         if (panelWidthPx < minWidth || panelHeightPx < minHeight) {
@@ -925,8 +978,13 @@ class FloatingOverlayController(
             panelParams.width = panelWidthPx
             panelParams.height = panelHeightPx
             if (panelVisible) {
-                panelParams.x = panelParams.x.coerceAtMost(
-                    (screenWidth - panelWidthPx - dp(2)).coerceAtLeast(dp(2)),
+                panelParams.x = panelParams.x.coerceIn(
+                    0,
+                    (screenWidth - panelWidthPx).coerceAtLeast(0),
+                )
+                panelParams.y = panelParams.y.coerceIn(
+                    0,
+                    (screenHeight - panelHeightPx).coerceAtLeast(0),
                 )
                 runCatching { windowManager.updateViewLayout(panelRoot, panelParams) }
             }
@@ -949,10 +1007,32 @@ class FloatingOverlayController(
         val link = if (state.showClipboard) state.clipboardLink else null
         panelLink.visibility = if (link.isNullOrBlank()) View.GONE else View.VISIBLE
         panelLink.text = link?.let { "剪贴板 ${it.take(46)}" }.orEmpty()
+        if (state.hidePanel) {
+            if (panelVisible) hidePanel(notify = false)
+            return
+        }
         if (state.expanded && !panelVisible) {
             showPanel(notify = false)
         } else if (!state.expanded && panelVisible) {
             hidePanel(notify = false)
+        }
+    }
+
+    private fun applyPanelPadding() {
+        val key = "${state.panelPaddingLeftDp}:${state.panelPaddingTopDp}:" +
+            "${state.panelPaddingRightDp}:${state.panelPaddingBottomDp}:" +
+            "${state.panelDragHandleTopDp}"
+        if (key == lastPanelPaddingKey) return
+        lastPanelPaddingKey = key
+        panelCard.setPadding(
+            dp(state.panelPaddingLeftDp.coerceIn(0, 24)),
+            dp(state.panelPaddingTopDp.coerceIn(0, 24)),
+            dp(state.panelPaddingRightDp.coerceIn(0, 24)),
+            dp(state.panelPaddingBottomDp.coerceIn(0, 24)),
+        )
+        (panelDragArea.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
+            params.topMargin = dp(state.panelDragHandleTopDp.coerceIn(0, 20))
+            panelDragArea.layoutParams = params
         }
     }
 
@@ -1082,6 +1162,53 @@ class FloatingOverlayController(
         val animator = orbAnimator ?: return
         orbAnimator = null
         animator.cancel()
+    }
+
+    private fun restoreOrbGeometry() {
+        if (orbGeometryRestored) return
+        orbGeometryRestored = true
+        val xFraction = state.orbXFraction
+        val yFraction = state.orbYFraction
+        if (xFraction !in 0f..1f || yFraction !in 0f..1f) return
+        val maxX = (screenWidth - orbParams.width).coerceAtLeast(0)
+        val maxY = (screenHeight - orbParams.height).coerceAtLeast(0)
+        orbParams.x = (maxX * xFraction).toInt().coerceIn(0, maxX)
+        orbParams.y = (maxY * yFraction).toInt().coerceIn(0, maxY)
+    }
+
+    private fun restorePanelGeometry() {
+        if (panelGeometryRestored) return
+        panelGeometryRestored = true
+        if (state.panelWidthDp > 0) panelWidthPx = dp(state.panelWidthDp)
+        if (state.panelHeightDp > 0) panelHeightPx = dp(state.panelHeightDp)
+        val xFraction = state.panelXFraction
+        val yFraction = state.panelYFraction
+        if (xFraction !in 0f..1f || yFraction !in 0f..1f) return
+        val maxX = (screenWidth - panelWidthPx).coerceAtLeast(0)
+        val maxY = (screenHeight - panelHeightPx).coerceAtLeast(0)
+        panelParams.x = (maxX * xFraction).toInt().coerceIn(0, maxX)
+        panelParams.y = (maxY * yFraction).toInt().coerceIn(0, maxY)
+        panelPositioned = true
+    }
+
+    private fun persistOrbGeometry() {
+        val maxX = (screenWidth - orbParams.width).coerceAtLeast(1)
+        val maxY = (screenHeight - orbParams.height).coerceAtLeast(1)
+        onOrbPositionChanged(
+            (orbParams.x.toFloat() / maxX).coerceIn(0f, 1f),
+            (orbParams.y.toFloat() / maxY).coerceIn(0f, 1f),
+        )
+    }
+
+    private fun persistPanelGeometry() {
+        val maxX = (screenWidth - panelWidthPx).coerceAtLeast(1)
+        val maxY = (screenHeight - panelHeightPx).coerceAtLeast(1)
+        onPanelGeometryChanged(
+            (panelParams.x.toFloat() / maxX).coerceIn(0f, 1f),
+            (panelParams.y.toFloat() / maxY).coerceIn(0f, 1f),
+            (panelWidthPx / density).toInt(),
+            (panelHeightPx / density).toInt(),
+        )
     }
 
     private fun safeOrbTarget(): Pair<Int, Int> {
@@ -1572,5 +1699,6 @@ class FloatingOverlayController(
 
     companion object {
         private const val TAG = "FloatingOverlay"
+        private const val ORB_LONG_PRESS_MS = 550L
     }
 }

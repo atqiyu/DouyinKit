@@ -20,6 +20,7 @@ import com.atqiyu.douyinkit.MainActivity
 import com.atqiyu.douyinkit.R
 import com.atqiyu.douyinkit.core.util.LinkExtractor
 import com.atqiyu.douyinkit.data.prefs.FloatingMode
+import com.atqiyu.douyinkit.data.prefs.FloatingQueueMode
 import com.atqiyu.douyinkit.di.appContainer
 import com.atqiyu.douyinkit.parser.ParseActivity
 import kotlinx.coroutines.CoroutineScope
@@ -29,7 +30,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -49,6 +53,10 @@ class FloatingAssistantService : Service() {
     private var settingsJob: Job? = null
     private var clipboardManager: ClipboardManager? = null
     private var automationJob: Job? = null
+    private var recordCountJob: Job? = null
+    private val shareLinkRepository by lazy {
+        applicationContext.appContainer.shareLinkRepository
+    }
     private var automationOwnsClipboard = false
     private var lastClipboardLink: String? = null
     private var lastClipboardAt = 0L
@@ -89,27 +97,59 @@ class FloatingAssistantService : Service() {
             onStop = ::stopCurrent,
             onInputSubmit = ::handleInputSubmit,
             onInputCancel = {},
+            onOrbPositionChanged = { x, y ->
+                scope.launch {
+                    runCatching {
+                        applicationContext.appContainer.settingsRepository
+                            .setFloatingOrbPosition(x, y)
+                    }
+                }
+            },
+            onPanelGeometryChanged = { x, y, width, height ->
+                scope.launch {
+                    runCatching {
+                        applicationContext.appContainer.settingsRepository
+                            .setFloatingPanelGeometry(x, y, width, height)
+                    }
+                }
+            },
+            onOrbLongPress = {
+                if (!FloatingAssistantBus.state.value.accessibilityReady) {
+                    FloatingPermissions.openAccessibilitySettings(this)
+                    FloatingAssistantBus.update {
+                        it.copy(
+                            expanded = true,
+                            message = "请开启 Kit 浮球无障碍服务",
+                        )
+                    }
+                } else {
+                    FloatingAssistantBus.update {
+                        it.copy(message = "无障碍服务已开启")
+                    }
+                }
+            },
         )
         overlay = newOverlay
         queue = FloatingParseQueue(applicationContext, scope)
-        if (FloatingPermissions.canDrawOverlays(this) && newOverlay.showOrb()) {
-            FloatingAssistantBus.setOverlayReady(true)
-        } else {
-            FloatingAssistantBus.setOverlayReady(false)
-        }
+        // The orb is shown by the first render() after settings (including its saved
+        // position) have been loaded, so it does not jump after the service starts.
+        FloatingAssistantBus.setOverlayReady(false)
 
         stateJob = scope.launch {
             FloatingAssistantBus.state.collect { state ->
                 overlay?.render(state)
+                FloatingAssistantBus.setOverlayReady(overlay?.isOrbShown() == true)
                 if (state.enabled) updateNotification(state)
             }
         }
         settingsJob = scope.launch {
             applicationContext.appContainer.settingsRepository.settings.collect { settings ->
                 FloatingAssistantBus.setMode(settings.floatingMode)
-                FloatingAssistantBus.setAutoDownload(settings.floatingAutoDownload)
+                FloatingAssistantBus.setQueueMode(settings.floatingQueueMode)
                 FloatingAssistantBus.update {
                     it.copy(
+                        settingsLoaded = true,
+                        hidePanel = settings.floatingHidePanel,
                         orbSizeDp = settings.floatingOrbSizeDp,
                         orbAlpha = settings.floatingOrbAlpha,
                         panelOpacity = settings.floatingPanelOpacity,
@@ -123,9 +163,34 @@ class FloatingAssistantService : Service() {
                         panelMinWidthDp = settings.floatingPanelMinWidthDp,
                         panelMinHeightDp = settings.floatingPanelMinHeightDp,
                         idleTimeoutSeconds = settings.floatingIdleTimeoutSeconds,
+                        panelPaddingLeftDp = settings.floatingPanelPaddingLeftDp,
+                        panelPaddingTopDp = settings.floatingPanelPaddingTopDp,
+                        panelPaddingRightDp = settings.floatingPanelPaddingRightDp,
+                        panelPaddingBottomDp = settings.floatingPanelPaddingBottomDp,
+                        panelDragHandleTopDp = settings.floatingPanelDragHandleTopDp,
+                        orbXFraction = settings.floatingOrbXFraction,
+                        orbYFraction = settings.floatingOrbYFraction,
+                        panelXFraction = settings.floatingPanelXFraction,
+                        panelYFraction = settings.floatingPanelYFraction,
+                        panelWidthDp = settings.floatingPanelWidthDp,
+                        panelHeightDp = settings.floatingPanelHeightDp,
                     )
                 }
             }
+        }
+        recordCountJob = scope.launch {
+            applicationContext.appContainer.settingsRepository.settings
+                .map { it.floatingQueueMode }
+                .distinctUntilChanged()
+                .collectLatest { mode ->
+                    if (mode == FloatingQueueMode.RECORD_ONLY) {
+                        shareLinkRepository.observePendingCount().collect { count ->
+                            FloatingAssistantBus.setQueueSize(count)
+                        }
+                    } else {
+                        FloatingAssistantBus.setQueueSize(queue?.currentQueueSize() ?: 0)
+                    }
+                }
         }
 
         registerClipboard()
@@ -151,6 +216,14 @@ class FloatingAssistantService : Service() {
             stopFromUser()
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_ENQUEUE_BATCH) {
+            if (!foregroundStarted) {
+                startForegroundCompat(buildNotification("Kit 浮球运行中", "后台批量处理"))
+            }
+            val links = intent.getStringArrayListExtra(EXTRA_LINKS).orEmpty()
+            links.forEach { queue?.enqueue(it) }
+            return START_STICKY
+        }
         if (!foregroundStarted) {
             startForegroundCompat(buildNotification("Kit 浮球运行中", "等待抖音作品链接"))
         }
@@ -164,6 +237,7 @@ class FloatingAssistantService : Service() {
         clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
         clipboardManager = null
         automationJob?.cancel()
+        recordCountJob?.cancel()
         queue?.destroy()
         queue = null
         overlay?.dismiss()
@@ -229,7 +303,7 @@ class FloatingAssistantService : Service() {
         }
         FloatingAssistantBus.setPromptVisible(false)
         if (FloatingAssistantBus.state.value.mode == FloatingMode.AUTO) {
-            queue?.enqueue(link)
+            handleAutoLink(link)
         } else {
             openParseInApp(listOf(link))
         }
@@ -242,7 +316,7 @@ class FloatingAssistantService : Service() {
             return
         }
         if (FloatingAssistantBus.state.value.mode == FloatingMode.AUTO) {
-            links.forEach { queue?.enqueue(it) }
+            links.forEach { handleAutoLink(it) }
             FloatingAssistantBus.update { it.copy(expanded = true) }
         } else {
             openParseInApp(links)
@@ -271,6 +345,9 @@ class FloatingAssistantService : Service() {
         }
         automationJob = scope.launch {
             Log.d(TAG, "super action starting")
+            val (previousText, previousStamp) = readClipboardSnapshot()
+            val previousLink = previousText
+                ?.let { LinkExtractor.extract(it).firstOrNull()?.url }
             automationOwnsClipboard = true
             FloatingAssistantBus.setAutomationBusy(true)
             FloatingAssistantBus.update {
@@ -285,15 +362,19 @@ class FloatingAssistantService : Service() {
                 when (val result = service.autoShareAndCopy()) {
                     is DouyinAccessibilityService.AutomationResult.Success -> {
                         Log.d(TAG, "share automation succeeded, waiting for clipboard")
-                        val link = awaitClipboardLink()
+                        val link = awaitClipboardLink(previousLink, previousStamp)
                         if (link != null) {
                             FloatingAssistantBus.setClipboardLink(link)
-                            queue?.enqueue(link)
+                            handleAutoLink(link)
                         } else {
                             FloatingAssistantBus.update {
                                 it.copy(
                                     phase = FloatingPhase.ERROR,
-                                    message = "已点击分享链接，但没有读取到剪贴板；请手动打开“解析链接”",
+                                    message = if (previousLink != null) {
+                                        "剪贴板仍是上一个作品，本次没有加入队列，请重试"
+                                    } else {
+                                        "已点击分享链接，但没有读取到剪贴板；请手动打开“解析链接”"
+                                    },
                                 )
                             }
                         }
@@ -323,15 +404,35 @@ class FloatingAssistantService : Service() {
         }
     }
 
-    private suspend fun awaitClipboardLink(): String? {
-        repeat(5) {
-            val text = readClipboardText()
+    private suspend fun awaitClipboardLink(previousLink: String?, previousStamp: Long): String? {
+        repeat(8) {
+            val (text, stamp) = readClipboardSnapshot()
             val link = text?.let { LinkExtractor.extract(it).firstOrNull()?.url }
-            if (link != null) return link
-            delay(200)
+            val changed = stamp > previousStamp ||
+                (previousStamp == 0L && link != null && link != previousLink)
+            if (link != null && changed) return link
+            delay(250)
         }
         val focusedText = focusReader.read()
-        return focusedText?.let { LinkExtractor.extract(it).firstOrNull()?.url }
+        val focusedLink = focusedText?.let { LinkExtractor.extract(it).firstOrNull()?.url }
+        return focusedLink?.takeIf { it != previousLink }
+    }
+
+    private fun readClipboardSnapshot(): Pair<String?, Long> {
+        return runCatching {
+            val manager = clipboardManager ?: return null to 0L
+            val clip = manager.primaryClip ?: return null to 0L
+            if (clip.itemCount == 0) return null to 0L
+            val text = clip.getItemAt(0)?.coerceToText(this)?.toString()
+            val stamp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                manager.primaryClipDescription?.timestamp ?: 0L
+            } else {
+                0L
+            }
+            text to stamp
+        }.onFailure { error ->
+            Log.w(TAG, "clipboard snapshot failed: ${error.javaClass.simpleName}")
+        }.getOrDefault(null to 0L)
     }
 
     private fun onClipboardChanged() {
@@ -361,7 +462,7 @@ class FloatingAssistantService : Service() {
         FloatingAssistantBus.setClipboardLink(link)
         val state = FloatingAssistantBus.state.value
         if (state.mode == FloatingMode.AUTO && state.foreground.isDouyin) {
-            queue?.enqueue(link)
+            handleAutoLink(link)
         } else {
             FloatingAssistantBus.update {
                 it.copy(
@@ -374,6 +475,41 @@ class FloatingAssistantService : Service() {
                     },
                 )
             }
+        }
+    }
+
+    private fun handleAutoLink(link: String) {
+        val queueMode = FloatingAssistantBus.state.value.queueMode
+        if (queueMode == FloatingQueueMode.RECORD_ONLY) {
+            scope.launch {
+                val url = runCatching { shareLinkRepository.record(link) }.getOrNull()
+                if (url == null) {
+                    FloatingAssistantBus.update {
+                        it.copy(message = "没有识别到可记录的抖音链接")
+                    }
+                    return@launch
+                }
+                FloatingAssistantBus.setPromptVisible(false)
+                FloatingAssistantBus.update {
+                    it.copy(
+                        phase = FloatingPhase.IDLE,
+                        title = null,
+                        message = "已记录分享链接，可在资料库批量处理",
+                        detail = url,
+                        progress = null,
+                        resultReady = false,
+                        expanded = true,
+                        needsVerification = false,
+                        needsLogin = false,
+                    )
+                }
+            }
+            return
+        }
+        // Record first so a very fast parse cannot finish before the row exists.
+        scope.launch {
+            runCatching { shareLinkRepository.record(link) }
+            queue?.enqueue(link)
         }
     }
 
@@ -456,6 +592,9 @@ class FloatingAssistantService : Service() {
 
     private fun refreshOverlay() {
         val controller = overlay ?: return
+        // Wait for the settings snapshot so the orb is created directly at its saved
+        // position instead of jumping from the default position a moment later.
+        if (!FloatingAssistantBus.state.value.settingsLoaded) return
         if (FloatingPermissions.canDrawOverlays(this)) {
             val shown = controller.showOrb()
             FloatingAssistantBus.setOverlayReady(shown)
@@ -569,10 +708,21 @@ class FloatingAssistantService : Service() {
         private const val NOTIFICATION_ID = 7410
         const val ACTION_START = "com.atqiyu.douyinkit.floating.START"
         const val ACTION_STOP = "com.atqiyu.douyinkit.floating.STOP"
+        const val ACTION_ENQUEUE_BATCH = "com.atqiyu.douyinkit.floating.ENQUEUE_BATCH"
+        const val EXTRA_LINKS = "extra_links"
 
         fun start(context: Context) {
             val intent = Intent(context, FloatingAssistantService::class.java)
                 .setAction(ACTION_START)
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun enqueueBatch(context: Context, links: List<String>) {
+            if (links.isEmpty()) return
+            val intent = Intent(context, FloatingAssistantService::class.java).apply {
+                action = ACTION_ENQUEUE_BATCH
+                putStringArrayListExtra(EXTRA_LINKS, ArrayList(links))
+            }
             ContextCompat.startForegroundService(context, intent)
         }
 

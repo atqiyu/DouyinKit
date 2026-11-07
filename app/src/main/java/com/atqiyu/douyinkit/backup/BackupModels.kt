@@ -5,6 +5,7 @@ import com.atqiyu.douyinkit.data.prefs.DownloadSortMode
 import com.atqiyu.douyinkit.data.prefs.FloatingMode
 import com.atqiyu.douyinkit.data.prefs.FloatingPanelColor
 import com.atqiyu.douyinkit.data.prefs.FloatingPanelStyle
+import com.atqiyu.douyinkit.data.prefs.FloatingQueueMode
 import com.atqiyu.douyinkit.data.prefs.ThemeMode
 import kotlinx.serialization.Serializable
 
@@ -57,6 +58,8 @@ data class ConfigSettings(
     val floatingBallEnabled: Boolean = false,
     val floatingMode: String = "STANDARD",
     val floatingAutoDownload: Boolean = true,
+    val floatingQueueMode: String = "",
+    val floatingHidePanel: Boolean = false,
     val floatingOrbSizeDp: Int = 48,
     val floatingOrbAlpha: Float = 0.88f,
     val floatingPanelOpacity: Float = 0.72f,
@@ -71,6 +74,18 @@ data class ConfigSettings(
     val floatingPanelMinHeightDp: Int = 64,
     val floatingIdleTimeoutSeconds: Int = 45,
     val floatingQueueIntervalSeconds: Int = 5,
+    val floatingPanelPaddingLeftDp: Int = 8,
+    val floatingPanelPaddingTopDp: Int = 4,
+    val floatingPanelPaddingRightDp: Int = 8,
+    val floatingPanelPaddingBottomDp: Int = 6,
+    val floatingPanelDragHandleTopDp: Int = 2,
+    val floatingOrbXFraction: Float = -1f,
+    val floatingOrbYFraction: Float = -1f,
+    val floatingPanelXFraction: Float = -1f,
+    val floatingPanelYFraction: Float = -1f,
+    val floatingPanelWidthDp: Int = 0,
+    val floatingPanelHeightDp: Int = 0,
+    val previewOverlayOpacity: Float = 0.86f,
 ) {
     fun toSettings(): AppSettings = AppSettings(
         defaultQualityHeight = defaultQualityHeight.coerceIn(0, 2160),
@@ -89,7 +104,13 @@ data class ConfigSettings(
         floatingBallEnabled = floatingBallEnabled,
         floatingMode = runCatching { FloatingMode.valueOf(floatingMode) }
             .getOrDefault(FloatingMode.STANDARD),
-        floatingAutoDownload = floatingAutoDownload,
+        floatingQueueMode = runCatching { FloatingQueueMode.valueOf(floatingQueueMode) }
+            .getOrNull() ?: if (floatingAutoDownload) {
+            FloatingQueueMode.PARSE_AND_DOWNLOAD
+        } else {
+            FloatingQueueMode.PARSE_ONLY
+        },
+        floatingHidePanel = floatingHidePanel,
         floatingOrbSizeDp = floatingOrbSizeDp.coerceIn(38, 72),
         floatingOrbAlpha = floatingOrbAlpha.coerceIn(0.35f, 1f),
         floatingPanelOpacity = floatingPanelOpacity.coerceIn(0.2f, 1f),
@@ -106,6 +127,18 @@ data class ConfigSettings(
         floatingPanelMinHeightDp = floatingPanelMinHeightDp.coerceIn(64, 160),
         floatingIdleTimeoutSeconds = floatingIdleTimeoutSeconds.coerceIn(0, 180),
         floatingQueueIntervalSeconds = floatingQueueIntervalSeconds.coerceIn(0, 60),
+        floatingPanelPaddingLeftDp = floatingPanelPaddingLeftDp.coerceIn(0, 24),
+        floatingPanelPaddingTopDp = floatingPanelPaddingTopDp.coerceIn(0, 24),
+        floatingPanelPaddingRightDp = floatingPanelPaddingRightDp.coerceIn(0, 24),
+        floatingPanelPaddingBottomDp = floatingPanelPaddingBottomDp.coerceIn(0, 24),
+        floatingPanelDragHandleTopDp = floatingPanelDragHandleTopDp.coerceIn(0, 20),
+        floatingOrbXFraction = floatingOrbXFraction.coerceIn(-1f, 1f),
+        floatingOrbYFraction = floatingOrbYFraction.coerceIn(-1f, 1f),
+        floatingPanelXFraction = floatingPanelXFraction.coerceIn(-1f, 1f),
+        floatingPanelYFraction = floatingPanelYFraction.coerceIn(-1f, 1f),
+        floatingPanelWidthDp = floatingPanelWidthDp.coerceIn(0, 1000),
+        floatingPanelHeightDp = floatingPanelHeightDp.coerceIn(0, 1000),
+        previewOverlayOpacity = previewOverlayOpacity.coerceIn(0.5f, 1f),
     )
 
     companion object {
@@ -124,7 +157,10 @@ data class ConfigSettings(
             onboardingAccepted = settings.onboardingAccepted,
             floatingBallEnabled = settings.floatingBallEnabled,
             floatingMode = settings.floatingMode.name,
-            floatingAutoDownload = settings.floatingAutoDownload,
+            floatingAutoDownload =
+                settings.floatingQueueMode == FloatingQueueMode.PARSE_AND_DOWNLOAD,
+            floatingQueueMode = settings.floatingQueueMode.name,
+            floatingHidePanel = settings.floatingHidePanel,
             floatingOrbSizeDp = settings.floatingOrbSizeDp,
             floatingOrbAlpha = settings.floatingOrbAlpha,
             floatingPanelOpacity = settings.floatingPanelOpacity,
@@ -139,6 +175,18 @@ data class ConfigSettings(
             floatingPanelMinHeightDp = settings.floatingPanelMinHeightDp,
             floatingIdleTimeoutSeconds = settings.floatingIdleTimeoutSeconds,
             floatingQueueIntervalSeconds = settings.floatingQueueIntervalSeconds,
+            floatingPanelPaddingLeftDp = settings.floatingPanelPaddingLeftDp,
+            floatingPanelPaddingTopDp = settings.floatingPanelPaddingTopDp,
+            floatingPanelPaddingRightDp = settings.floatingPanelPaddingRightDp,
+            floatingPanelPaddingBottomDp = settings.floatingPanelPaddingBottomDp,
+            floatingPanelDragHandleTopDp = settings.floatingPanelDragHandleTopDp,
+            floatingOrbXFraction = settings.floatingOrbXFraction,
+            floatingOrbYFraction = settings.floatingOrbYFraction,
+            floatingPanelXFraction = settings.floatingPanelXFraction,
+            floatingPanelYFraction = settings.floatingPanelYFraction,
+            floatingPanelWidthDp = settings.floatingPanelWidthDp,
+            floatingPanelHeightDp = settings.floatingPanelHeightDp,
+            previewOverlayOpacity = settings.previewOverlayOpacity,
         )
     }
 }

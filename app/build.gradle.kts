@@ -14,8 +14,8 @@ android {
         applicationId = "com.atqiyu.douyinkit"
         minSdk = 24
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.5.7"
+        versionCode = 14
+        versionName = "1.6.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
